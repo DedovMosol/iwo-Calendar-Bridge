@@ -7,7 +7,7 @@ namespace IwoBridge.Ews.Transport
 {
     /// <summary>
     /// Создаёт настроенный <see cref="ExchangeService"/>: схема Exchange2007_SP1 (совместима с 2007 SP2…2013),
-    /// часовой пояс UTC (сервер отдаёт времена в UTC — нет ловушки пояса при чтении), NTLM-учётные данные с
+    /// пояс UTC+0 под кодом, который знает и Windows Server 2003 (<see cref="RequestTimeZone"/>), NTLM-учётные данные с
     /// доменом отдельным полем, своя группа соединений (см. <see cref="TlsTrustRegistry"/>).
     ///
     /// Процессных настроек фабрика не меняет (SoC):
@@ -22,6 +22,17 @@ namespace IwoBridge.Ews.Transport
 
         /// <summary>Имя программы в журналах сервера (IIS/EWS) — администратору видно, кто обращается.</summary>
         private const string UserAgent = "iwoCalendarBridge";
+
+        /// <summary>
+        /// Пояс запросов: UTC+0 без перехода на летнее время, но под кодом «Greenwich Standard Time», а не «UTC».
+        /// Exchange 2007 ищет пояс по коду в реестре Windows сервера, а в Windows Server 2003 кода «UTC» нет: сервер
+        /// отвечает ErrorTimeZone («Не удалось найти часовой пояс по коду») на любой запрос — проверено на живом
+        /// сервере. «Greenwich Standard Time» есть во всех Windows с XP/2003 и тоже без летнего времени (не путать с
+        /// «GMT Standard Time» — это Лондон, с переходом). Времена по-прежнему точные моменты UTC: смещение 0, а
+        /// значения без указания зоны ядро трактует как UTC (<c>TimeMapper</c>).
+        /// </summary>
+        internal static readonly TimeZoneInfo RequestTimeZone = TimeZoneInfo.CreateCustomTimeZone(
+            "Greenwich Standard Time", TimeSpan.Zero, "Greenwich Standard Time", "Greenwich Standard Time");
 
         /// <param name="connectionGroupName">
         /// Группа соединений подключения: свой пул TLS-соединений и своя проверка сертификата. <c>null</c> — общая
@@ -43,7 +54,7 @@ namespace IwoBridge.Ews.Transport
                 ? new WebCredentials(credentials.User, credentials.Password)
                 : new WebCredentials(credentials.User, credentials.Password, credentials.Domain);
 
-            var service = new ExchangeService(ExchangeVersion.Exchange2007_SP1, TimeZoneInfo.Utc)
+            var service = new ExchangeService(ExchangeVersion.Exchange2007_SP1, RequestTimeZone)
             {
                 Url = profile.EwsUrl,
                 Credentials = webCredentials,

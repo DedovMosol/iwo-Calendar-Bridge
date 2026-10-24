@@ -108,6 +108,55 @@ namespace IwoBridge.Ews
             return EwsErrorMapper.MapException(exception);
         }
 
+        /// <summary>
+        /// Подробности ошибки для администратора: вся цепочка исключений (тип и текст), код ответа EWS, состояние
+        /// соединения и код HTTP. Верхнее сообщение EWS Managed API часто общее («The request failed»), а причина —
+        /// во внутреннем исключении. Пароля в тексте нет: исключения его не содержат.
+        /// </summary>
+        public static string Explain(Exception exception)
+        {
+            if (exception is null)
+            {
+                throw new ArgumentNullException(nameof(exception));
+            }
+
+            var text = new System.Text.StringBuilder();
+            int depth = 0;
+            for (Exception? current = exception; current != null && depth < 8; current = current.InnerException, depth++)
+            {
+                if (depth > 0)
+                {
+                    text.Append("\n← ");
+                }
+
+                text.Append(current.GetType().Name).Append(": ").Append(current.Message);
+                switch (current)
+                {
+                    case Microsoft.Exchange.WebServices.Data.ServiceResponseException sre:
+                        text.Append(" [код EWS: ").Append(sre.ErrorCode).Append(']');
+                        break;
+                    case WebException web:
+                        text.Append(" [соединение: ").Append(web.Status);
+                        if (web.Response is HttpWebResponse response)
+                        {
+                            try
+                            {
+                                text.Append(", HTTP ").Append((int)response.StatusCode);
+                            }
+                            catch (ObjectDisposedException)
+                            {
+                                // Ответ уже закрыт библиотекой — кода нет.
+                            }
+                        }
+
+                        text.Append(']');
+                        break;
+                }
+            }
+
+            return text.ToString();
+        }
+
         /// <summary>Снимает проверку сертификата подключения с учёта и закрывает его соединения. Повторный вызов безопасен.</summary>
         public void Dispose()
         {

@@ -1,6 +1,6 @@
 param(
-    # Square brand logo (the shared "iwo" logo of the iwo product family).
-    [string]$Logo = (Join-Path $PSScriptRoot '..\docs\images\logo.jpg'),
+    # Square product logo (build\make-logo.ps1): two calendar sheets and an arrow - copy from one to another.
+    [string]$Logo = (Join-Path $PSScriptRoot '..\docs\images\logo.png'),
     [string]$OutDir = (Join-Path $PSScriptRoot '..\docs\images')
 )
 # Dev-only: draws the README banner (1600x444) and the GitHub social preview (1280x640) in the same style
@@ -23,8 +23,6 @@ function New-Card([int]$width, [int]$height, [int]$logoSize, [int]$titleSize, [i
     $logoX = [int]($height * 0.23)
     $logoY = [int](($height - $logoSize) / 2)
     $g.DrawImage($logoImage, $logoX, $logoY, $logoSize, $logoSize)
-    $frame = New-Object System.Drawing.Pen ([System.Drawing.Color]::FromArgb(90, 255, 255, 255)), 1
-    $g.DrawRectangle($frame, $logoX, $logoY, $logoSize, $logoSize)
     $logoImage.Dispose()
 
     $textLeft = $logoX + $logoSize + [int]($height * 0.1)
@@ -62,5 +60,5 @@ function New-Card([int]$width, [int]$height, [int]$logoSize, [int]$titleSize, [i
     "saved $path"
 }
 
-New-Card 1600 444 290 92 30 @('Exchange calendar cleanup  |  EWS  |  alternate server  |  Windows 7+  x86 / x64') 'banner.jpg'
-New-Card 1280 640 300 84 32 @('Safe Exchange calendar cleanup over EWS', 'Outlook to Exchange sync  |  Windows 7+') 'social-preview.png'
+New-Card 1600 444 290 92 30 @('Calendar copy between Exchange mailboxes  |  safe cleanup  |  Windows 7+') 'banner.jpg'
+New-Card 1280 640 300 84 32 @('Copy a calendar from one Exchange mailbox to another', 'Outlook  ->  EWS  |  safe cleanup  |  Windows 7+') 'social-preview.png'

@@ -42,7 +42,7 @@ namespace IwoBridge.Wpf.Services
 #pragma warning restore CA1031
             {
                 return ConnectionCheckResult.Failure(
-                    ErrorMessages.For(EwsTarget.Classify(ex), ex.Message),
+                    ErrorMessages.For(EwsTarget.Classify(ex), EwsTarget.Explain(ex)),
                     target?.CertificateDecision,
                     target?.PresentedCertificate);
             }

@@ -61,7 +61,9 @@ namespace IwoBridge.Wpf.Services
 
         public UserMessage Describe(Exception exception)
         {
-            return ErrorMessages.For(EwsTarget.Classify(exception), exception?.Message);
+            return exception is null
+                ? ErrorMessages.For(Core.Errors.OperationErrorKind.Unknown)
+                : ErrorMessages.For(EwsTarget.Classify(exception), EwsTarget.Explain(exception));
         }
 
         public void Dispose()

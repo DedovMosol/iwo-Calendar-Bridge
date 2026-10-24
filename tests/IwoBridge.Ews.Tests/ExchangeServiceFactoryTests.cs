@@ -24,7 +24,11 @@ namespace IwoBridge.Ews.Tests
             ExchangeService service = new ExchangeServiceFactory().Create(Profile, new CredentialSecret("EXAMPLE\\user", "secret"));
 
             Assert.Equal(ExchangeVersion.Exchange2007_SP1, service.RequestedServerVersion);
-            Assert.Equal(TimeZoneInfo.Utc.Id, service.TimeZone.Id);
+            // Код пояса — тот, что есть в реестре Windows Server 2003 (код «UTC» сервер Exchange 2007 там не находит:
+            // ErrorTimeZone на любой запрос); смещение 0 и никакого перехода на летнее время.
+            Assert.Equal("Greenwich Standard Time", service.TimeZone.Id);
+            Assert.Equal(TimeSpan.Zero, service.TimeZone.BaseUtcOffset);
+            Assert.False(service.TimeZone.SupportsDaylightSavingTime);
             Assert.Equal(Profile.EwsUrl, service.Url);
             Assert.True(service.KeepAlive);
         }

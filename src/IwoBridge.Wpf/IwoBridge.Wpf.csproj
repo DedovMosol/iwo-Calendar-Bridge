@@ -12,6 +12,9 @@
     <AssemblyName>IwoCalendarBridge</AssemblyName>
     <RootNamespace>IwoBridge.Wpf</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- Значок exe (Проводник, панель задач, Alt+Tab) и окон: два листа календаря и стрелка — копия с одного на
+         другой. Рисует build\make-logo.ps1; кадры 16…256 px, каждый нарисован в своём размере. -->
+    <ApplicationIcon>app.ico</ApplicationIcon>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <Product>iwo Calendar Bridge</Product>
     <Title>iwo Calendar Bridge</Title>
@@ -30,6 +33,10 @@
     <ProjectReference Include="..\IwoBridge.App\IwoBridge.App.csproj" />
     <ProjectReference Include="..\IwoBridge.Ews\IwoBridge.Ews.csproj" />
     <ProjectReference Include="..\IwoBridge.InMemory\IwoBridge.InMemory.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="app.ico" />
   </ItemGroup>
 
   <!-- Тесты моделей представления видят внутренние типы приложения. -->

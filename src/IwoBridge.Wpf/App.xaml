@@ -54,6 +54,7 @@
             <Setter Property="UseLayoutRounding" Value="True" />
             <Setter Property="SnapsToDevicePixels" Value="True" />
             <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
+            <Setter Property="Icon" Value="pack://application:,,,/IwoCalendarBridge;component/app.ico" />
         </Style>
 
         <Style x:Key="TitleText" TargetType="TextBlock">
