@@ -16,3 +16,6 @@ TestResults/
 
 # Готовые сборки (build\package.ps1)
 artifacts/
+
+# Local reference material (other repositories, downloads) - not part of the product
+.ref/
