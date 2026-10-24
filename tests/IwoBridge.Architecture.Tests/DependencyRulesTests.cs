@@ -42,6 +42,9 @@ namespace IwoBridge.Architecture.Tests
 
             ["IwoBridge.Ews"] = Set(Framework, "IwoBridge.Core", "Microsoft.Exchange.WebServices"),
 
+            // Outlook — позднее связывание (dynamic) без Interop-сборок: нужен только связыватель C#.
+            ["IwoBridge.Outlook"] = Set(Framework, "IwoBridge.Core", "Microsoft.CSharp"),
+
             // Приложение с окнами — корень композиции: видит все слои, но EWS Managed API — только через EwsTarget.
             // Сборка называется IwoCalendarBridge (имя exe), проект — IwoBridge.Wpf.
             ["IwoCalendarBridge"] = Set(
@@ -50,6 +53,7 @@ namespace IwoBridge.Architecture.Tests
                 "IwoBridge.App",
                 "IwoBridge.Ews",
                 "IwoBridge.InMemory",
+                "IwoBridge.Outlook",
                 "WindowsBase",
                 "PresentationCore",
                 "PresentationFramework",
@@ -69,6 +73,7 @@ namespace IwoBridge.Architecture.Tests
             typeof(CleanupRunner).Assembly,
             typeof(InMemoryCalendar).Assembly,
             typeof(EwsCalendarGateway).Assembly,
+            typeof(IwoBridge.Outlook.OutlookSession).Assembly,
             typeof(IwoBridge.Wpf.ViewModels.MainViewModel).Assembly,
         }.ToDictionary(a => a.GetName().Name, StringComparer.Ordinal);
 
@@ -103,7 +108,8 @@ namespace IwoBridge.Architecture.Tests
         [Fact]
         public void NoAssembly_ReferencesOutlookInterop()
         {
-            // Outlook появится в R2 отдельным адаптером; до тех пор Interop нигде не допустим.
+            // Адаптер Outlook работает через позднее связывание: Interop-сборки привязали бы программу к версии и
+            // разрядности Office.
             foreach (string name in Allowed.Keys)
             {
                 Assert.DoesNotContain(References(name), r =>
@@ -129,13 +135,19 @@ namespace IwoBridge.Architecture.Tests
             Assert.DoesNotContain("IwoBridge.InMemory", References("IwoBridge.Ews"));
             Assert.DoesNotContain("IwoBridge.App", References("IwoBridge.Ews"));
             Assert.DoesNotContain("IwoBridge.App", References("IwoBridge.InMemory"));
+            Assert.DoesNotContain("IwoBridge.Ews", References("IwoBridge.Outlook"));
+            Assert.DoesNotContain("IwoBridge.Outlook", References("IwoBridge.Ews"));
+            Assert.DoesNotContain("IwoBridge.App", References("IwoBridge.Outlook"));
         }
 
         [Fact]
         public void EveryProjectInSrc_HasRule()
         {
             string src = Path.Combine(FindRepositoryRoot(), "src");
+            // «*_wpftmp.csproj» — временный проект, который сборка WPF создаёт на время компиляции разметки; при
+            // параллельной сборке он попадал в список и ронял тест.
             string[] projects = Directory.GetFiles(src, "*.csproj", SearchOption.AllDirectories)
+                .Where(path => !path.EndsWith("_wpftmp.csproj", StringComparison.OrdinalIgnoreCase))
                 .Select(Path.GetFileNameWithoutExtension)
                 .Select(p => AssemblyOfProject.TryGetValue(p, out string? assembly) ? assembly : p)
                 .OrderBy(n => n, StringComparer.Ordinal)

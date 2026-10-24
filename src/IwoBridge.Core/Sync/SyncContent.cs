@@ -8,21 +8,41 @@ using IwoBridge.Core.Time;
 
 namespace IwoBridge.Core.Sync
 {
-    /// <summary>Вложение события — для отпечатка содержимого: имя, размер и SHA-256 содержимого.</summary>
+    /// <summary>
+    /// Вложение события — для отпечатка содержимого и для переноса: имя, размер и (если известен) SHA-256 содержимого.
+    /// Содержимое для отпечатка не нужно: при чтении источника хватает имени и размера (PLAN.md §6.6), а сами байты
+    /// читаются только для событий, которые действительно копируются (<see cref="ISourceCalendar.LoadAttachmentsAsync"/>).
+    /// </summary>
     public sealed class SyncAttachment
     {
-        public SyncAttachment(string name, long length, string contentSha256)
+        /// <param name="contentSha256">SHA-256 содержимого; <c>null</c> — неизвестен (в отпечаток не входит).</param>
+        public SyncAttachment(string name, long length, string? contentSha256 = null)
         {
             Name = name ?? string.Empty;
             Length = length >= 0 ? length : throw new ArgumentOutOfRangeException(nameof(length));
-            ContentSha256 = (contentSha256 ?? throw new ArgumentNullException(nameof(contentSha256))).ToUpperInvariant();
+            ContentSha256 = (contentSha256 ?? string.Empty).ToUpperInvariant();
         }
 
         public string Name { get; }
 
         public long Length { get; }
 
+        /// <summary>SHA-256 содержимого в верхнем регистре; пусто — неизвестен.</summary>
         public string ContentSha256 { get; }
+    }
+
+    /// <summary>Содержимое вложения для записи в копию.</summary>
+    public sealed class AttachmentContent
+    {
+        public AttachmentContent(string name, byte[] content)
+        {
+            Name = string.IsNullOrWhiteSpace(name) ? "attachment" : name;
+            Content = content ?? throw new ArgumentNullException(nameof(content));
+        }
+
+        public string Name { get; }
+
+        public byte[] Content { get; }
     }
 
     /// <summary>

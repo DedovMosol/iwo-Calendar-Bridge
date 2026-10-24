@@ -6,9 +6,11 @@ using System.Threading.Tasks;
 using IwoBridge.Core.Configuration;
 using IwoBridge.Core.Errors;
 using IwoBridge.Core.Security;
+using IwoBridge.Core.Sync;
 using IwoBridge.Core.Transport;
 using IwoBridge.Ews.Mapping;
 using IwoBridge.Ews.Transport;
+using Microsoft.Exchange.WebServices.Data;
 
 namespace IwoBridge.Ews
 {
@@ -42,6 +44,15 @@ namespace IwoBridge.Ews
         /// У каждого адреса — своя группа соединений и своя проверка сертификата со своим закреплением.
         /// </summary>
         public EwsTarget(ConnectionProfile profile, CredentialSecret credentials)
+            : this(profile, credentials, null)
+        {
+        }
+
+        /// <summary>
+        /// То же подключение, но вместо основного календаря ящика — указанная папка календаря. Для живых проверок:
+        /// запись идёт во временную папку, основной календарь не трогается.
+        /// </summary>
+        internal EwsTarget(ConnectionProfile profile, CredentialSecret credentials, FolderId? calendarFolder)
         {
             if (profile is null)
             {
@@ -56,18 +67,41 @@ namespace IwoBridge.Ews
             var factory = new ExchangeServiceFactory();
             _endpoints = profile.Endpoints.Select(e => new Endpoint(e)).ToArray();
             var retry = new RetryPolicy(EwsErrorMapper.MapException, EwsErrorMapper.ServerBackOff);
-            Calendar = new EwsCalendarGateway(
-                _endpoints.Select(e => factory.Create(profile.ForEndpoint(e.Settings), credentials, e.ConnectionGroup)).ToArray(),
-                profile.MailboxAddress,
-                retry);
+            FolderId calendar = calendarFolder ?? EwsCalendarGateway.CalendarOf(profile.MailboxAddress);
+
+            // Чтение — в UTC; запись событий — в поясе календаря ящика (CalendarZones, T31). У обоих каналов те же
+            // группы соединений адресов, поэтому и та же проверка сертификата.
+            var read = new EwsChannel(
+                _endpoints.Select(e => factory.Create(profile.ForEndpoint(e.Settings), credentials, e.ConnectionGroup)).ToArray(), retry);
+            TimeZoneInfo calendarZone = CalendarZones.ForOffset(profile.TimeZone.Offset);
+            var write = new EwsChannel(
+                _endpoints.Select(e => factory.Create(profile.ForEndpoint(e.Settings), credentials, e.ConnectionGroup, calendarZone)).ToArray(), retry);
+
+            ReadChannel = read;
+            Calendar = new EwsCalendarGateway(read, calendar);
+            CopyTarget = new EwsCopyTarget(read, write, calendar, Calendar, calendarZone);
+            string mailbox = profile.MailboxAddress ?? credentials.UserName;
+            Source = new EwsSource(mailbox + " на " + ServerAddress.ToDisplay(profile.EwsUrl), read, calendar, Calendar);
             foreach (Endpoint endpoint in _endpoints)
             {
                 TlsTrustRegistry.Register(endpoint.ConnectionGroup, endpoint.Validator);
             }
         }
 
+        /// <summary>Канал запросов в UTC (с проверкой сертификата и переходом на резервный адрес) — для живых проверок.</summary>
+        internal EwsChannel ReadChannel { get; }
+
         /// <summary>Основной календарь целевого ящика: порты чтения, данных серий, раскрытия окна и удаления.</summary>
         public EwsCalendarGateway Calendar { get; }
+
+        /// <summary>Этот календарь как приёмник копирования: копии моста, создание, перезапись, удаление.</summary>
+        public ICopyTarget CopyTarget { get; }
+
+        /// <summary>Этот календарь как источник копирования (только чтение).</summary>
+        public ISourceCalendar Source { get; }
+
+        /// <summary>Ошибка всего подключения — копирование на ней останавливается (<see cref="ErrorClassifier.StopsBatch"/>).</summary>
+        public static bool StopsBatch(Exception exception) => ErrorClassifier.StopsBatch(Classify(exception));
 
         /// <summary>Резервный ли адрес сейчас в работе (основной был недоступен).</summary>
         public bool UsesAlternate => Active.Settings.IsAlternate;

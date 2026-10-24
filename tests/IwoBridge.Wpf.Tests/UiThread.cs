@@ -22,14 +22,31 @@ namespace IwoBridge.Wpf.Tests
         private static readonly Lazy<Dispatcher> Instance = new Lazy<Dispatcher>(Start, LazyThreadSafetyMode.ExecutionAndPublication);
 
         /// <summary>Выполнить действие в потоке окон и дождаться его (исключения пробрасываются в тест).</summary>
+        private static Exception? _unhandled;
+
         public static void Run(Func<Task> action)
         {
             Instance.Value.InvokeAsync(action).Task.Unwrap().GetAwaiter().GetResult();
+            ThrowUnhandled();
         }
 
         public static void Run(Action action)
         {
             Instance.Value.InvokeAsync(action).Task.GetAwaiter().GetResult();
+            ThrowUnhandled();
+        }
+
+        /// <summary>
+        /// Необработанная ошибка в потоке окон (например, в обработчике Loaded) — провал теста, а не модальное окно
+        /// «Непредвиденная ошибка», которое повесило бы прогон до щелчка человека.
+        /// </summary>
+        private static void ThrowUnhandled()
+        {
+            Exception? error = Interlocked.Exchange(ref _unhandled, null);
+            if (error != null)
+            {
+                throw new InvalidOperationException("Необработанная ошибка в потоке окон: " + error.Message, error);
+            }
         }
 
         private static Dispatcher Start()
@@ -42,6 +59,11 @@ namespace IwoBridge.Wpf.Tests
                     var app = new IwoBridge.Wpf.App();
                     app.InitializeComponent();
                     app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+                    app.DispatcherUnhandledException += (_, e) =>
+                    {
+                        Interlocked.CompareExchange(ref _unhandled, e.Exception, null);
+                        e.Handled = true;
+                    };
                     ready.SetResult(Dispatcher.CurrentDispatcher);
                 }
 #pragma warning disable CA1031

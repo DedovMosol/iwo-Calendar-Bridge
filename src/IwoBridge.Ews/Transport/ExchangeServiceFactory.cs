@@ -38,7 +38,12 @@ namespace IwoBridge.Ews.Transport
         /// Группа соединений подключения: свой пул TLS-соединений и своя проверка сертификата. <c>null</c> — общая
         /// группа (только для тестов фабрики).
         /// </param>
-        public ExchangeService Create(ConnectionProfile profile, CredentialSecret credentials, string? connectionGroupName = null)
+        /// <param name="timeZone">
+        /// Пояс запросов: по умолчанию UTC+0 (<see cref="RequestTimeZone"/>) — для чтения; для записи событий — пояс
+        /// календаря приёмника (<see cref="CalendarZones"/>).
+        /// </param>
+        public ExchangeService Create(
+            ConnectionProfile profile, CredentialSecret credentials, string? connectionGroupName = null, TimeZoneInfo? timeZone = null)
         {
             if (profile is null)
             {
@@ -54,7 +59,7 @@ namespace IwoBridge.Ews.Transport
                 ? new WebCredentials(credentials.User, credentials.Password)
                 : new WebCredentials(credentials.User, credentials.Password, credentials.Domain);
 
-            var service = new ExchangeService(ExchangeVersion.Exchange2007_SP1, RequestTimeZone)
+            var service = new ExchangeService(ExchangeVersion.Exchange2007_SP1, timeZone ?? RequestTimeZone)
             {
                 Url = profile.EwsUrl,
                 Credentials = webCredentials,

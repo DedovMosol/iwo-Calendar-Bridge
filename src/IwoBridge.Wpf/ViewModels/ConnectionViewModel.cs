@@ -65,6 +65,7 @@ namespace IwoBridge.Wpf.ViewModels
         private readonly Dictionary<string, string?> _pins = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
 
         /// <param name="loadError">Ошибка чтения прежних настроек — показывается вверху окна.</param>
+        /// <param name="title">Заголовок окна: какое это подключение (приёмник или источник).</param>
         public ConnectionViewModel(
             ISettingsStore settings,
             ITargetConnector connector,
@@ -72,8 +73,10 @@ namespace IwoBridge.Wpf.ViewModels
             TimeSpan localOffset,
             ConnectionProfile? savedProfile,
             CredentialSecret? savedCredentials,
-            string? loadError = null)
+            string? loadError = null,
+            string title = "Подключение к серверу")
         {
+            Title = title;
             _settings = settings ?? throw new ArgumentNullException(nameof(settings));
             _connector = connector ?? throw new ArgumentNullException(nameof(connector));
             _dialogs = dialogs ?? throw new ArgumentNullException(nameof(dialogs));
@@ -105,6 +108,9 @@ namespace IwoBridge.Wpf.ViewModels
 
         /// <summary>Окно закрывается с результатом «сохранено» — подписывается окно.</summary>
         public event EventHandler? Saved;
+
+        /// <summary>Заголовок окна.</summary>
+        public string Title { get; }
 
         public AsyncCommand CheckCommand { get; }
 

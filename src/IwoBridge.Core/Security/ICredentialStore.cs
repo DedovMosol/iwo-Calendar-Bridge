@@ -21,5 +21,8 @@ namespace IwoBridge.Core.Security
     {
         /// <summary>Учётная запись для входа на сервер-приёмник по EWS.</summary>
         public const string Ews = "IwoCalendarBridge/ews";
+
+        /// <summary>Учётные данные подключения «Источник по EWS» (копирование с другого сервера).</summary>
+        public const string EwsSource = "IwoCalendarBridge/ews-source";
     }
 }

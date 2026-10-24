@@ -1,0 +1,293 @@
+<UserControl x:Class="IwoBridge.Wpf.Views.CopyPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:views="clr-namespace:IwoBridge.Wpf.Views">
+    <!-- Вкладка «Копирование» (модель — CopyViewModel). Шаги сверху вниз:
+         1) откуда (Outlook этого компьютера или сервер по EWS), куда (приёмник), период;
+         2) предпросмотр: каждое действие строкой с флажком — человек выбирает, что выполнить; внизу той же карточки —
+            копирование выбранного (с подтверждением), ход работы с остановкой, итог.
+         Источник не меняется никогда; в приёмнике трогаются только копии, созданные программой.
+         Разметка страницы — та же, что у «Очистки» (FillPanel в прокрутке): список занимает свободное место. -->
+    <ScrollViewer x:Name="CopyScroll" Padding="20,14" Focusable="False"
+                  VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <views:FillPanel x:Name="CopyContent" ViewportHeight="{Binding ViewportHeight, ElementName=CopyScroll}">
+
+            <!-- Шаг 1. Откуда, куда, за какой период -->
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
+                    <!-- Заголовок и «куда» — одной строкой: приёмник один, выбирается кнопкой «Приёмник…» вверху окна. -->
+                    <WrapPanel Margin="0,0,0,4">
+                        <TextBlock Style="{StaticResource SectionText}" Text="1. Откуда и куда" Margin="0,0,20,4" VerticalAlignment="Center" />
+                        <TextBlock VerticalAlignment="Center" Margin="0,0,0,4" TextWrapping="Wrap"
+                                   ToolTip="Приёмник — кнопка «Приёмник…» вверху окна. В нём меняются только копии, созданные этой программой; ваши события не трогаются.">
+                            <Run Text="Куда:" Foreground="{DynamicResource MutedTextBrush}" /> <Run Text="{Binding TargetLabel, Mode=OneWay}" FontWeight="SemiBold" />
+                        </TextBlock>
+                    </WrapPanel>
+
+                    <Grid IsEnabled="{Binding IsIdle}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" MinWidth="76" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <!-- Откуда: Outlook (список календарей) или сервер по EWS — по строке на вариант. -->
+                        <TextBlock Text="Откуда" Margin="0,8,12,0" Foreground="{DynamicResource MutedTextBrush}" />
+                        <StackPanel Grid.Column="1">
+                            <WrapPanel>
+                                <RadioButton GroupName="Source" IsChecked="{Binding UseOutlook}" IsEnabled="{Binding OutlookAvailable}"
+                                             Content="Outlook на _этом компьютере" Margin="0,2,12,2" VerticalAlignment="Center"
+                                             AutomationProperties.AutomationId="SourceOutlook"
+                                             ToolTip="Календарь из открытого Outlook: любой ящик, который в нём подключён. Outlook должен быть запущен. Нужен, если у учётной записи источника нет доступа по EWS." />
+                                <StackPanel Orientation="Horizontal" Margin="0,2" IsEnabled="{Binding UseOutlook}">
+                                    <ComboBox Width="360" Margin="0,0,8,0" DisplayMemberPath="Label"
+                                              ItemsSource="{Binding OutlookCalendars}" SelectedItem="{Binding OutlookCalendar}"
+                                              AutomationProperties.Name="Календарь Outlook" AutomationProperties.AutomationId="OutlookCalendar"
+                                              ToolTip="Какой календарь Outlook копировать: те же, что в панели «Календарь» Outlook, включая «Общие календари». По умолчанию — открытый сейчас в Outlook." />
+                                    <Button Content="_Обновить" Command="{Binding RefreshOutlookCommand}"
+                                            ToolTip="Перечитать список календарей из открытого Outlook" />
+                                </StackPanel>
+                            </WrapPanel>
+                            <!-- Календаря нет в списке (например, общий календарь коллеги) — ввести ФИО или часть названия. -->
+                            <WrapPanel Margin="26,2,0,0" IsEnabled="{Binding OutlookAvailable}">
+                                <Label Content="Найти по _ФИО или названию:" Target="{Binding ElementName=CalendarSearchBox}" Padding="0,0,8,0"
+                                       VerticalAlignment="Center" Margin="0,2" />
+                                <StackPanel Orientation="Horizontal" Margin="0,2">
+                                    <TextBox x:Name="CalendarSearchBox" Width="260" Margin="0,0,8,0" VerticalContentAlignment="Center"
+                                             Text="{Binding CalendarSearch, UpdateSourceTrigger=PropertyChanged}"
+                                             AutomationProperties.Name="ФИО владельца или название календаря"
+                                             AutomationProperties.AutomationId="CalendarSearch"
+                                             ToolTip="Например, фамилия владельца общего календаря. Сначала ищется среди календарей Outlook, затем — в адресной книге Outlook. Enter — найти.">
+                                        <TextBox.InputBindings>
+                                            <KeyBinding Key="Enter" Command="{Binding FindOutlookCalendarCommand}" />
+                                        </TextBox.InputBindings>
+                                    </TextBox>
+                                    <Button Content="На_йти" Command="{Binding FindOutlookCalendarCommand}" AutomationProperties.AutomationId="FindCalendarButton"
+                                            ToolTip="Найти и выбрать календарь" />
+                                </StackPanel>
+                            </WrapPanel>
+                            <TextBlock Style="{StaticResource FieldErrorText}" Margin="26,0,0,2" views:Announce.Text="{Binding OutlookError}"
+                                       AutomationProperties.LiveSetting="Polite" />
+                            <WrapPanel Margin="0,4,0,0">
+                                <RadioButton GroupName="Source" IsChecked="{Binding UseEws}" Content="_Сервер по EWS:" Margin="0,0,8,0"
+                                             VerticalAlignment="Center" AutomationProperties.AutomationId="SourceEws"
+                                             ToolTip="Календарь на другом сервере Exchange — подключение «Источник (EWS)…» вверху окна" />
+                                <TextBlock VerticalAlignment="Center" TextWrapping="Wrap" Text="{Binding EwsSourceLabel}"
+                                           Foreground="{DynamicResource MutedTextBrush}" />
+                            </WrapPanel>
+                        </StackPanel>
+
+                        <TextBlock Grid.Row="2" Text="Период" Margin="0,14,12,0" Foreground="{DynamicResource MutedTextBrush}" />
+                        <WrapPanel Grid.Row="2" Grid.Column="1" Margin="0,8,0,0">
+                            <StackPanel Orientation="Horizontal" Margin="0,2,16,2">
+                                <TextBlock Text="с" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                <DatePicker Width="150" SelectedDate="{Binding PeriodStart}"
+                                            AutomationProperties.Name="Первый день периода копирования"
+                                            ToolTip="Первый день периода, дд.мм.гггг" />
+                                <TextBlock Text="по" VerticalAlignment="Center" Margin="12,0,8,0" />
+                                <DatePicker Width="150" SelectedDate="{Binding PeriodEnd}"
+                                            AutomationProperties.Name="Последний день периода копирования"
+                                            ToolTip="Последний день периода, дд.мм.гггг. День входит в период целиком." />
+                                <TextBlock VerticalAlignment="Center" Margin="8,0,0,0" Foreground="{DynamicResource MutedTextBrush}"
+                                           Text="включительно" />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,2" VerticalAlignment="Center">
+                                <Button Style="{StaticResource LinkButton}" VerticalAlignment="Center"
+                                        Content="месяц назад — 3 месяца вперёд" Command="{Binding SetRecentCommand}"
+                                        ToolTip="Недавнее и ближайшее: с этого же числа месяц назад по этот же день через три месяца" />
+                                <Button Style="{StaticResource LinkButton}" Margin="10,0,0,0" VerticalAlignment="Center"
+                                        Content="весь год" Command="{Binding SetThisYearCommand}"
+                                        ToolTip="С 1 января по 31 декабря текущего года" />
+                            </StackPanel>
+                        </WrapPanel>
+                    </Grid>
+
+                    <Grid Margin="0,10,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Style="{StaticResource HintText}" Margin="0">
+                                <Run Text="События, хотя бы частично попадающие в период. Время — в поясе приёмника" />
+                                <Run Text="{Binding TimeZoneText, Mode=OneWay}" /><Run Text="." />
+                            </TextBlock>
+                            <TextBlock Style="{StaticResource FieldErrorText}" views:Announce.Text="{Binding ValidationError}"
+                                       AutomationProperties.LiveSetting="Assertive" />
+                        </StackPanel>
+                        <Button Grid.Column="1" Margin="16,0,0,0" VerticalAlignment="Bottom" Style="{StaticResource PrimaryButton}"
+                                Content="_Показать, что будет скопировано"
+                                AutomationProperties.AutomationId="CopyPreviewButton"
+                                Command="{Binding PreviewCommand}"
+                                IsDefault="{Binding HasPreview, Converter={StaticResource Not}}"
+                                ToolTip="Прочитать источник и приёмник и показать разницу: что создастся, перезапишется, удалится. Ничего не меняется. (F5)" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <!-- Ход работы, ошибка, итог -->
+            <StackPanel>
+                <Border Style="{StaticResource Card}" Visibility="{Binding IsBusy, Converter={StaticResource VisibleWhen}}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="{Binding ProgressText}" TextTrimming="CharacterEllipsis" Margin="0,0,0,6" />
+                            <ProgressBar Height="8" Minimum="0" Maximum="{Binding ProgressMaximum, Mode=OneWay}"
+                                         Value="{Binding ProgressValue, Mode=OneWay}"
+                                         IsIndeterminate="{Binding IsProgressIndeterminate, Mode=OneWay}"
+                                         AutomationProperties.Name="Ход копирования" />
+                        </StackPanel>
+                        <Button Grid.Column="1" Margin="16,0,0,0" Content="Ос_тановить" Command="{Binding StopCommand}"
+                                ToolTip="Чтение прерывается сразу, запись — после текущего события. (Esc)" />
+                    </Grid>
+                </Border>
+
+                <Border Style="{StaticResource ErrorBanner}" Visibility="{Binding HasError, Converter={StaticResource VisibleWhen}}">
+                    <StackPanel>
+                        <TextBlock FontWeight="SemiBold" Foreground="{DynamicResource ErrorTextBrush}" TextWrapping="Wrap"
+                                   views:Announce.Text="{Binding Error.Title}" AutomationProperties.LiveSetting="Assertive" />
+                        <TextBlock TextWrapping="Wrap" Margin="0,4,0,0" Text="{Binding Error.Hint}" />
+                        <Expander Header="Подробности для администратора" Margin="0,6,0,0"
+                                  Visibility="{Binding Error.HasDetails, Converter={StaticResource VisibleWhen}}">
+                            <TextBox IsReadOnly="True" TextWrapping="Wrap" Margin="0,4,0,0" BorderThickness="0" Background="Transparent"
+                                     MaxHeight="200" VerticalScrollBarVisibility="Auto"
+                                     Text="{Binding Error.Details, Mode=OneWay}" AutomationProperties.Name="Подробности ошибки" />
+                        </Expander>
+                    </StackPanel>
+                </Border>
+
+                <Border Visibility="{Binding HasResult, Converter={StaticResource VisibleWhen}}">
+                    <Border.Style>
+                        <Style TargetType="Border" BasedOn="{StaticResource InfoBanner}">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding ResultIsSuccess}" Value="True">
+                                    <Setter Property="Background" Value="{DynamicResource SuccessBackBrush}" />
+                                    <Setter Property="BorderBrush" Value="{DynamicResource SuccessLineBrush}" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
+                    <StackPanel>
+                        <TextBlock FontWeight="SemiBold" FontSize="16" TextWrapping="Wrap"
+                                   views:Announce.Text="{Binding ResultTitle}" AutomationProperties.LiveSetting="Polite" />
+                        <TextBox IsReadOnly="True" TextWrapping="Wrap" Margin="0,4,0,0" BorderThickness="0" Background="Transparent"
+                                 Padding="0" MinHeight="0" MaxHeight="240" VerticalScrollBarVisibility="Auto"
+                                 Text="{Binding ResultText, Mode=OneWay}" AutomationProperties.Name="Итог копирования"
+                                 AutomationProperties.AutomationId="CopyResult" />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+
+            <!-- Шаг 2. Что будет сделано; внизу карточки — копирование выбранного. -->
+            <Border Style="{StaticResource Card}" Margin="0" views:FillPanel.Fill="True" MinHeight="320"
+                    Visibility="{Binding HasPreview, Converter={StaticResource VisibleWhen}}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <WrapPanel>
+                        <TextBlock Style="{StaticResource SectionText}" Margin="0,0,16,4" Text="2. Проверьте, что будет сделано" />
+                        <TextBlock FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,4"
+                                   views:Announce.Text="{Binding Summary}" AutomationProperties.LiveSetting="Polite" />
+                    </WrapPanel>
+
+                    <!-- Отступы — у самих полос: скрытые полосы места не занимают. -->
+                    <StackPanel Grid.Row="1">
+                        <Border Style="{StaticResource ErrorBanner}" Margin="0,8,0,0" Visibility="{Binding IsBlocked, Converter={StaticResource VisibleWhen}}">
+                            <StackPanel>
+                                <TextBlock FontWeight="SemiBold" Foreground="{DynamicResource ErrorTextBrush}" TextWrapping="Wrap"
+                                           Text="Похоже на ошибку чтения — много копий на удаление" />
+                                <TextBlock TextWrapping="Wrap" Margin="0,4,0,0" Text="{Binding BlockReason}" />
+                                <CheckBox Margin="0,8,0,0" IsChecked="{Binding AllowMassDelete}"
+                                          ToolTip="Затем снова нажмите «Показать, что будет скопировано»">
+                                    <TextBlock TextWrapping="Wrap" Text="Это ожидаемо — разрешить удаление этих копий (после отметки постройте предпросмотр заново)" />
+                                </CheckBox>
+                            </StackPanel>
+                        </Border>
+                        <Border Style="{StaticResource InfoBanner}" Margin="0,8,0,0" Visibility="{Binding SuppressedReason, Converter={StaticResource VisibleWhen}}">
+                            <StackPanel>
+                                <TextBlock FontWeight="SemiBold" TextWrapping="Wrap" Text="Источник прочитан не полностью — удаления копий не предлагаются" />
+                                <TextBlock TextWrapping="Wrap" Margin="0,4,0,0" Text="{Binding SuppressedReason}" />
+                            </StackPanel>
+                        </Border>
+                        <Border Style="{StaticResource InfoBanner}" Margin="0,8,0,0" Visibility="{Binding ConflictText, Converter={StaticResource VisibleWhen}}">
+                            <TextBlock TextWrapping="Wrap" Text="{Binding ConflictText}" />
+                        </Border>
+                        <!-- Замечания источника — свёрнуты: список бывает длинным, а таблице нужно место. -->
+                        <Border Style="{StaticResource InfoBanner}" Margin="0,8,0,0" Padding="12,4" Visibility="{Binding WarningsText, Converter={StaticResource VisibleWhen}}">
+                            <Expander Header="Замечания к источнику — часть повторений в копию не попадёт" AutomationProperties.AutomationId="CopyWarnings">
+                                <TextBox IsReadOnly="True" TextWrapping="Wrap" Margin="0,4,0,4" BorderThickness="0" Background="Transparent"
+                                         MaxHeight="120" VerticalScrollBarVisibility="Auto"
+                                         Text="{Binding WarningsText, Mode=OneWay}" AutomationProperties.Name="Замечания к источнику" />
+                            </Expander>
+                        </Border>
+                        <Border Style="{StaticResource SuccessBanner}" Margin="0,8,0,0" Visibility="{Binding NothingToDo, Converter={StaticResource VisibleWhen}}">
+                            <TextBlock TextWrapping="Wrap" Text="Приёмник уже совпадает с источником за этот период — делать нечего." />
+                        </Border>
+                    </StackPanel>
+
+                    <Grid Grid.Row="2" Margin="0,8,0,0" Visibility="{Binding RowCount, Converter={StaticResource VisibleWhen}}">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                            <Button Style="{StaticResource LinkButton}" Content="Отметить все" Command="{Binding SelectAllCommand}"
+                                    ToolTip="Выполнить все действия списка" />
+                            <Button Style="{StaticResource LinkButton}" Margin="12,0,0,0" Content="Снять все" Command="{Binding SelectNoneCommand}"
+                                    ToolTip="Снять отметки — затем отметить только нужные строки" />
+                        </StackPanel>
+                        <DataGrid Grid.Row="1" ItemsSource="{Binding Rows}" AutomationProperties.Name="Что будет сделано"
+                                  AutomationProperties.AutomationId="CopyRows">
+                            <DataGrid.Columns>
+                                <DataGridTemplateColumn Header="✓" Width="40" CanUserResize="False">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <CheckBox HorizontalAlignment="Center" IsChecked="{Binding IsSelected, UpdateSourceTrigger=PropertyChanged}"
+                                                      AutomationProperties.Name="Выполнить это действие" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTextColumn Header="Действие" Binding="{Binding Kind}" Width="130" MinWidth="100"
+                                                    ElementStyle="{StaticResource TrimmedCell}" />
+                                <DataGridTextColumn Header="Тема" Binding="{Binding Subject}" Width="*" MinWidth="120"
+                                                    ElementStyle="{StaticResource TrimmedCell}" />
+                                <DataGridTextColumn Header="Начало" Binding="{Binding Start}" Width="170" MinWidth="110"
+                                                    ElementStyle="{StaticResource TrimmedCell}" />
+                                <DataGridTextColumn Header="Почему" Binding="{Binding Reason}" Width="200" MinWidth="120"
+                                                    ElementStyle="{StaticResource TrimmedCell}" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Grid>
+
+                    <!-- Шаг 3. Копирование -->
+                    <Border Grid.Row="3" Margin="0,12,0,0" Padding="0,10,0,0" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Style="{StaticResource HintText}" Margin="0" VerticalAlignment="Center"
+                                       Text="Выполняются только отмеченные строки. Встречи копируются простыми событиями — участникам ничего не рассылается; вложения переносятся; личные события — без темы и описания." />
+                            <Button Grid.Column="1" Margin="16,0,0,0" VerticalAlignment="Center" Style="{StaticResource PrimaryButton}"
+                                    Content="Скопировать _выбранное…" Command="{Binding CopyCommand}"
+                                    AutomationProperties.AutomationId="CopyButton"
+                                    ToolTip="Откроется окно подтверждения: сколько создать, перезаписать, удалить" />
+                        </Grid>
+                    </Border>
+                </Grid>
+            </Border>
+        </views:FillPanel>
+    </ScrollViewer>
+</UserControl>

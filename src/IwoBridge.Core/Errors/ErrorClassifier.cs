@@ -55,5 +55,30 @@ namespace IwoBridge.Core.Errors
         {
             return kind == OperationErrorKind.ConnectionReset || kind == OperationErrorKind.Timeout;
         }
+
+        /// <summary>
+        /// Ошибка не одного события, а всего подключения: следующие события упали бы так же. Пакетная работа (копирование)
+        /// на ней останавливается сразу, а не перебирает остальные — повтор неверного входа ещё и приблизил бы блокировку
+        /// учётной записи (T3). Временные ошибки сюда попадают уже после всех повторов.
+        /// </summary>
+        public static bool StopsBatch(OperationErrorKind kind)
+        {
+            switch (kind)
+            {
+                case OperationErrorKind.AuthenticationFailed:
+                case OperationErrorKind.AccessDenied:
+                case OperationErrorKind.MailboxNotFound:
+                case OperationErrorKind.EndpointNotFound:
+                case OperationErrorKind.CertificatePinMismatch:
+                case OperationErrorKind.TlsNegotiationFailed:
+                case OperationErrorKind.QuotaExceeded:
+                case OperationErrorKind.ConnectionReset:
+                case OperationErrorKind.Timeout:
+                case OperationErrorKind.ServerBusy:
+                    return true;
+                default:
+                    return false;
+            }
+        }
     }
 }

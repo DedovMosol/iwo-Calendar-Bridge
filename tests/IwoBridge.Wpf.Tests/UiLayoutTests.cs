@@ -10,6 +10,7 @@ using IwoBridge.InMemory;
 using IwoBridge.Wpf.ViewModels;
 using IwoBridge.Wpf.Views;
 using Xunit;
+using MainOperation = IwoBridge.Wpf.ViewModels.MainOperation;
 
 namespace IwoBridge.Wpf.Tests
 {
@@ -42,7 +43,8 @@ namespace IwoBridge.Wpf.Tests
                 {
                     var dialogs = new FakeDialogs();
                     var vm = new MainViewModel(Flood(3000), dialogs);
-                    var window = new MainWindow(vm, dialogs);
+                    vm.Operation = MainOperation.Cleanup; // вкладка «Очистка» (по умолчанию открыто «Копирование»)
+                var window = new MainWindow(vm, dialogs);
                     try
                     {
                         Visuals.ShowOffscreen(window, width, height);
@@ -106,6 +108,7 @@ namespace IwoBridge.Wpf.Tests
             {
                 var dialogs = new FakeDialogs();
                 var vm = new MainViewModel(new IwoBridge.Wpf.Services.DemoSession(DateTime.Today, TimeSpan.FromHours(3)), dialogs);
+                vm.Operation = MainOperation.Cleanup; // вкладка «Очистка» (по умолчанию открыто «Копирование»)
                 var window = new MainWindow(vm, dialogs);
                 try
                 {
@@ -135,6 +138,7 @@ namespace IwoBridge.Wpf.Tests
             {
                 var dialogs = new FakeDialogs();
                 var vm = new MainViewModel(Flood(50), dialogs);
+                vm.Operation = MainOperation.Cleanup; // вкладка «Очистка» (по умолчанию открыто «Копирование»)
                 var window = new MainWindow(vm, dialogs);
                 try
                 {
@@ -145,7 +149,7 @@ namespace IwoBridge.Wpf.Tests
 
                     var page = (ScrollViewer)window.FindName("Page");
                     Assert.True(page.ScrollableHeight > 0);
-                    TabControl tabs = Visuals.All<TabControl>(window).Single();
+                    var tabs = (TabControl)window.FindName("CleanupLists");
                     // Не меньше вкладок, заголовка колонок и трёх строк по 28 единиц.
                     Assert.True(tabs.ActualHeight >= 140, $"список {tabs.ActualHeight}");
                 }
@@ -163,6 +167,7 @@ namespace IwoBridge.Wpf.Tests
             {
                 var dialogs = new FakeDialogs();
                 var vm = new MainViewModel(Flood(5), dialogs);
+                vm.Operation = MainOperation.Cleanup; // вкладка «Очистка» (по умолчанию открыто «Копирование»)
                 var window = new MainWindow(vm, dialogs);
                 try
                 {
@@ -172,8 +177,9 @@ namespace IwoBridge.Wpf.Tests
 
                     AssertUniqueAccessKeys(window);
                     KeyBinding[] keys = window.InputBindings.OfType<KeyBinding>().ToArray();
-                    Assert.Same(vm.Cleanup.PreviewCommand, keys.Single(k => k.Key == Key.F5).Command);
-                    Assert.Same(vm.Cleanup.StopCommand, keys.Single(k => k.Key == Key.Escape).Command);
+                    // Клавиши окна — для открытой вкладки: F5 строит предпросмотр её операции, Esc останавливает идущую.
+                    Assert.Same(vm.PreviewCommand, keys.Single(k => k.Key == Key.F5).Command);
+                    Assert.Same(vm.StopCommand, keys.Single(k => k.Key == Key.Escape).Command);
 
                     // Enter строит предпросмотр, только пока его нет: с готовым списком Enter ничего не перестраивает.
                     var preview = Visuals.ByAutomationId<Button>(window, "PreviewButton");

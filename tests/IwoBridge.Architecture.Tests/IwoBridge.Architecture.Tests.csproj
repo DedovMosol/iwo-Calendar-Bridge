@@ -22,6 +22,7 @@
     <ProjectReference Include="..\..\src\IwoBridge.App\IwoBridge.App.csproj" />
     <ProjectReference Include="..\..\src\IwoBridge.InMemory\IwoBridge.InMemory.csproj" />
     <ProjectReference Include="..\..\src\IwoBridge.Ews\IwoBridge.Ews.csproj" />
+    <ProjectReference Include="..\..\src\IwoBridge.Outlook\IwoBridge.Outlook.csproj" />
     <ProjectReference Include="..\..\src\IwoBridge.Wpf\IwoBridge.Wpf.csproj" />
   </ItemGroup>
 

@@ -7,7 +7,9 @@ param(
     [string]$User = 'DOMAIN\user',
     [string]$Offset = '+03:00',
     # Only fill the form and take a screenshot (for documentation), do not run the check.
-    [switch]$NoCheck
+    [switch]$NoCheck,
+    # Shoot the "Source (EWS)" connection window instead of the receiver one.
+    [switch]$Source
 )
 # Dev-only check of the Connection window: start the app from a folder without config\connection.json,
 # so the window opens at startup; screenshot it empty, fill it, optionally run the check, screenshot the
@@ -49,6 +51,21 @@ function Set-Text($window, [string]$id, [string]$value) {
 $dialog = $null
 for ($i = 0; $i -lt 40 -and $dialog -eq $null; $i++) { Start-Sleep -Milliseconds 250; $dialog = Find-Dialog }
 if ($dialog -eq $null) { "connection window not found"; Stop-Process -Id $p.Id; exit 1 }
+if ($Source) {
+    # The receiver window opens at startup: close it, then open "Source (EWS)..." from the main window.
+    $dialog.GetCurrentPattern([System.Windows.Automation.WindowPattern]::Pattern).Close()
+    Start-Sleep -Seconds 1
+    $p.Refresh()
+    $main = [System.Windows.Automation.AutomationElement]::FromHandle($p.MainWindowHandle)
+    $button = Find-ById $main 'EditSourceButton'
+    $rs = [runspacefactory]::CreateRunspace(); $rs.Open()
+    $ps = [powershell]::Create(); $ps.Runspace = $rs
+    [void]$ps.AddScript({ param($x) $x.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke() }).AddArgument($button)
+    [void]$ps.BeginInvoke()
+    $dialog = $null
+    for ($i = 0; $i -lt 40 -and $dialog -eq $null; $i++) { Start-Sleep -Milliseconds 250; $dialog = Find-Dialog }
+    if ($dialog -eq $null) { "source window not found"; Stop-Process -Id $p.Id; exit 1 }
+}
 Start-Sleep -Milliseconds 500
 Shot $dialog 'c1-empty.png'
 Set-Text $dialog 'ServerBox' $Server

@@ -8,6 +8,7 @@ using IwoBridge.Core.Abstractions;
 using IwoBridge.Core.Model;
 using IwoBridge.Core.Paging;
 using IwoBridge.Core.Reading;
+using IwoBridge.Core.Sync;
 using IwoBridge.Core.Time;
 using IwoBridge.InMemory;
 using IwoBridge.Wpf.Messages;
@@ -55,7 +56,15 @@ namespace IwoBridge.Wpf.Services
 
         public CleanupRunner Runner { get; }
 
+        /// <summary>Приёмник копирования — отдельный календарь в памяти (копии «моста»).</summary>
+        public ICopyTarget CopyTarget { get; } = new SlowCopyTarget(new InMemoryCopyTarget());
+
+        /// <summary>Как источник — выдуманный рабочий календарь (тот же, что в списке «Outlook» демонстрации).</summary>
+        public ISourceCalendar Source => DemoSources.Work;
+
         public bool IsDemo => true;
+
+        public bool StopsBatch(Exception exception) => false;
 
         public UserMessage Describe(Exception exception)
         {
@@ -112,6 +121,37 @@ namespace IwoBridge.Wpf.Services
             yield return InMemoryEvent.Master("daily", "DEMO-DAILY", boundary, subject: "Ежедневная сводка");
 
             yield return InMemoryEvent.Single("note", Utc(today, 12), Utc(today, 12), itemClass: "IPM.Note", subject: "Заметка в календаре");
+        }
+
+        /// <summary>Небольшая задержка записи копий — видно ход работы и остановку.</summary>
+        private sealed class SlowCopyTarget : ICopyTarget
+        {
+            private readonly InMemoryCopyTarget _inner;
+
+            public SlowCopyTarget(InMemoryCopyTarget inner)
+            {
+                _inner = inner;
+            }
+
+            public Task<IReadOnlyList<BridgeCopy>> ReadCopiesAsync(CancellationToken cancellationToken) => _inner.ReadCopiesAsync(cancellationToken);
+
+            public async Task CreateAsync(SourceItem item, IReadOnlyList<AttachmentContent> attachments, CancellationToken cancellationToken)
+            {
+                await Task.Delay(BatchDelay, CancellationToken.None).ConfigureAwait(false);
+                await _inner.CreateAsync(item, attachments, cancellationToken).ConfigureAwait(false);
+            }
+
+            public async Task UpdateAsync(string copyItemId, SourceItem item, IReadOnlyList<AttachmentContent> attachments, CancellationToken cancellationToken)
+            {
+                await Task.Delay(BatchDelay, CancellationToken.None).ConfigureAwait(false);
+                await _inner.UpdateAsync(copyItemId, item, attachments, cancellationToken).ConfigureAwait(false);
+            }
+
+            public async Task DeleteAsync(string copyItemId, CancellationToken cancellationToken)
+            {
+                await Task.Delay(BatchDelay, CancellationToken.None).ConfigureAwait(false);
+                await _inner.DeleteAsync(copyItemId, cancellationToken).ConfigureAwait(false);
+            }
         }
 
         /// <summary>Задержка чтения страниц и удаления пакетов — только для наглядности демонстрации.</summary>

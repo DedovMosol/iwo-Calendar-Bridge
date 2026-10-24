@@ -7,6 +7,7 @@ using IwoBridge.Core.Abstractions;
 using IwoBridge.Core.Configuration;
 using IwoBridge.Core.Reading;
 using IwoBridge.Core.Security;
+using IwoBridge.Core.Sync;
 using IwoBridge.Core.Time;
 using IwoBridge.InMemory;
 using IwoBridge.Wpf.Messages;
@@ -40,6 +41,19 @@ namespace IwoBridge.Wpf.Tests
         public bool IsDemo => false;
 
         public UserMessage Describe(Exception exception) => new UserMessage("Ошибка теста", "Подсказка", exception.Message);
+
+        public InMemoryCopyTarget Copies { get; } = new InMemoryCopyTarget();
+
+        public ICopyTarget CopyTarget => Copies;
+
+        public InMemorySource SourceCalendar { get; set; } = new InMemorySource("тестовый источник", Array.Empty<IwoBridge.Core.Sync.SourceItem>());
+
+        public ISourceCalendar Source => SourceCalendar;
+
+        /// <summary>Ошибка, которая останавливает пакетную запись (по умолчанию — никакая).</summary>
+        public Func<Exception, bool> Fatal { get; set; } = _ => false;
+
+        public bool StopsBatch(Exception exception) => Fatal(exception);
 
         public bool IsDisposed { get; private set; }
 

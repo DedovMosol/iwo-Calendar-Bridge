@@ -268,21 +268,6 @@ namespace IwoBridge.App.Cleanup
         /// публикует в пул потоков и может переставить сообщения; доставку в поток интерфейса делает внешний
         /// <c>Progress&lt;T&gt;</c>, созданный окном.
         /// </summary>
-        private sealed class MappedProgress<T> : IProgress<T>
-        {
-            private readonly Action<T> _report;
-
-            public MappedProgress(Action<T> report)
-            {
-                _report = report;
-            }
-
-            public void Report(T value)
-            {
-                _report(value);
-            }
-        }
-
         private sealed class Selection
         {
             public Selection(IReadOnlyList<string> both, int onlyInFresh, int onlyInConfirmed)

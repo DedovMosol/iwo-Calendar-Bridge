@@ -342,6 +342,75 @@
             </Setter>
         </Style>
 
+        <!-- Вкладки выбора операции (главное окно): крупные заголовки, выбранная — с полосой цвета акцента снизу.
+             Стиль задаётся только своим вкладкам (ItemContainerStyle), вложенные вкладки списков остаются обычными. -->
+        <Style x:Key="OperationTab" TargetType="TabItem">
+            <Setter Property="FontSize" Value="15" />
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="ToolTipService.ShowOnDisabled" Value="True" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabItem">
+                        <Grid x:Name="Root" Background="Transparent" Margin="0,0,4,0">
+                            <Border x:Name="Overlay" Background="{DynamicResource TextBrush}" Opacity="0" />
+                            <ContentPresenter ContentSource="Header" RecognizesAccessKey="True" Margin="18,7,18,9"
+                                              HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            <Border x:Name="Underline" Height="3" VerticalAlignment="Bottom" Background="{DynamicResource AccentBrush}"
+                                    Visibility="Collapsed" />
+                            <Border x:Name="Focus" BorderBrush="{DynamicResource FocusBrush}" BorderThickness="1" Visibility="Collapsed" />
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Underline" Property="Visibility" Value="Visible" />
+                                <Setter Property="FontWeight" Value="SemiBold" />
+                                <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Trigger.EnterActions>
+                                    <BeginStoryboard Storyboard="{StaticResource HoverIn}" />
+                                </Trigger.EnterActions>
+                                <Trigger.ExitActions>
+                                    <BeginStoryboard Storyboard="{StaticResource HoverOut}" />
+                                </Trigger.ExitActions>
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Focus" Property="Visibility" Value="Visible" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Foreground" Value="{DynamicResource DisabledTextBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="OperationTabs" TargetType="TabControl">
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="BorderThickness" Value="0,1,0,0" />
+            <Setter Property="BorderBrush" Value="{DynamicResource LineBrush}" />
+            <Setter Property="Background" Value="{DynamicResource PageBrush}" />
+            <Setter Property="ItemContainerStyle" Value="{StaticResource OperationTab}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabControl">
+                        <DockPanel KeyboardNavigation.TabNavigation="Local">
+                            <Border DockPanel.Dock="Top" Background="{DynamicResource HeaderBrush}" Padding="16,0,16,0">
+                                <TabPanel IsItemsHost="True" KeyboardNavigation.TabIndex="1" />
+                            </Border>
+                            <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}">
+                                <!-- Имя PART_SelectedContentHost обязательно: по нему UI Automation (экранный диктор)
+                                     видит содержимое выбранной вкладки; без него кнопки вкладки для диктора не существуют. -->
+                                <ContentPresenter x:Name="PART_SelectedContentHost" ContentSource="SelectedContent" KeyboardNavigation.TabNavigation="Local" />
+                            </Border>
+                        </DockPanel>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <!-- Текст ячейки: длинная тема обрезается многоточием, целиком — во всплывающей подсказке. -->
         <Style x:Key="TrimmedCell" TargetType="TextBlock">
             <Setter Property="TextTrimming" Value="CharacterEllipsis" />

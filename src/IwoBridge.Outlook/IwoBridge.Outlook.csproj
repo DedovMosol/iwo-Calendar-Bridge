@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Адаптер источника «Outlook на этом компьютере» (PLAN.md §9): только чтение календаря через объектную модель
+       Outlook 2007…2016 (COM). Сборки Interop не нужны — позднее связывание (dynamic): программа работает с любой
+       установленной версией и разрядностью Outlook, а без Outlook просто не предлагает этот источник. Зависит
+       только от Core. -->
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <AssemblyName>IwoBridge.Outlook</AssemblyName>
+    <RootNamespace>IwoBridge.Outlook</RootNamespace>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- dynamic: связыватель C# для вызовов COM без Interop-сборок. -->
+    <Reference Include="Microsoft.CSharp" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\IwoBridge.Core\IwoBridge.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="IwoBridge.Outlook.Tests" />
+  </ItemGroup>
+
+</Project>

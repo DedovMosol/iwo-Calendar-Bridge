@@ -33,6 +33,7 @@
     <ProjectReference Include="..\IwoBridge.App\IwoBridge.App.csproj" />
     <ProjectReference Include="..\IwoBridge.Ews\IwoBridge.Ews.csproj" />
     <ProjectReference Include="..\IwoBridge.InMemory\IwoBridge.InMemory.csproj" />
+    <ProjectReference Include="..\IwoBridge.Outlook\IwoBridge.Outlook.csproj" />
   </ItemGroup>
 
   <ItemGroup>

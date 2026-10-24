@@ -2,305 +2,344 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:views="clr-namespace:IwoBridge.Wpf.Views"
-        Title="iwo Calendar Bridge — очистка календаря"
+        Title="iwo Calendar Bridge"
         Style="{StaticResource AppWindow}"
         Width="1120" Height="780" MinWidth="720" MinHeight="480"
         WindowStartupLocation="CenterScreen">
-    <!-- Главное окно. Сверху — что очищается и кнопка «Подключение…»; ниже — шаги очистки сверху вниз:
-         1) что удалить, 2) предпросмотр (что удалится и что останется), 3) удаление с подтверждением и итог.
-         Всё, что меняет календарь, — только по кнопке «Удалить…» с подтверждением вводом адреса ящика.
+    <!-- Главное окно. Сверху — подключения: «Приёмник…» (куда копировать) и «Источник (EWS)…» (если копировать с
+         сервера, а не из Outlook). Ниже — выбор операции вкладками:
+          - «Копирование» — откуда → куда: источник, период, предпросмотр с выбором действий, копирование, итог;
+          - «Очистка» — какой ящик, что удалить, предпросмотр, удаление с подтверждением вводом адреса ящика, итог.
 
-         Клавиши: F5 — «Показать, что будет удалено»; Esc — «Остановить»; Alt + подчёркнутая буква — кнопка или поле
-         (буквы не повторяются).
+         Клавиши: F5 — предпросмотр открытой вкладки; Esc — «Остановить»; Alt + подчёркнутая буква — кнопка или поле
+         (на видимой вкладке буквы не повторяются).
 
-         Адаптивность: окно открывается не больше экрана (WindowSizing) и работает от 720×480. Страница прокручивается
-         целиком, только если окно ниже 600 единиц; иначе таблица предпросмотра занимает всё свободное место и
-         прокручивается сама — с виртуализацией строк, тысячи строк не тормозят. Строка дат переносится на узком окне. -->
+         Адаптивность: окно открывается не больше экрана (WindowSizing) и работает от 720×480. Страница вкладки
+         прокручивается целиком, только если окно мало; иначе таблица предпросмотра занимает всё свободное место и
+         прокручивается сама — с виртуализацией строк, тысячи строк не тормозят. Строки полей переносятся на узком
+         окне. Высота экономится: приёмник — в строке названия, действие (удалить, скопировать) — внизу карточки
+         списка, а не отдельной карточкой. -->
     <Window.InputBindings>
-        <KeyBinding Key="F5" Command="{Binding Cleanup.PreviewCommand}" />
-        <KeyBinding Key="Escape" Command="{Binding Cleanup.StopCommand}" />
+        <KeyBinding Key="F5" Command="{Binding PreviewCommand}" />
+        <KeyBinding Key="Escape" Command="{Binding StopCommand}" />
     </Window.InputBindings>
 
     <DockPanel>
-        <!-- Шапка -->
-        <Border DockPanel.Dock="Top" Background="{DynamicResource HeaderBrush}" BorderBrush="{DynamicResource LineBrush}"
-                BorderThickness="0,0,0,1" Padding="20,12">
+        <!-- Шапка: название и приёмник одной строкой, справа — подключения. -->
+        <Border DockPanel.Dock="Top" Background="{DynamicResource HeaderBrush}" Padding="20,10">
             <Grid>
                 <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
-                <StackPanel VerticalAlignment="Center">
-                    <TextBlock Style="{StaticResource TitleText}" Text="Очистка календаря" />
-                    <TextBlock Foreground="{DynamicResource MutedTextBrush}" TextTrimming="CharacterEllipsis"
-                               Text="{Binding TargetLabel}" ToolTip="{Binding TargetLabel}"
-                               AutomationProperties.Name="Что очищается" />
-                </StackPanel>
-                <Button Grid.Column="1" Margin="16,0,0,0" Content="По_дключение…" VerticalAlignment="Center"
+                <TextBlock Style="{StaticResource TitleText}" Text="iwo Calendar Bridge" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="1" Margin="16,0,0,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                           Foreground="{DynamicResource MutedTextBrush}"
+                           ToolTip="{Binding TargetLabel}" AutomationProperties.Name="Приёмник">
+                    <Run Text="Приёмник:" /> <Run Text="{Binding TargetLabel, Mode=OneWay}" />
+                </TextBlock>
+                <Button Grid.Column="2" Margin="16,0,0,0" Content="Приё_мник…" VerticalAlignment="Center"
+                        AutomationProperties.AutomationId="EditTargetButton"
                         Command="{Binding EditConnectionCommand}"
-                        ToolTip="Сервер (внутренний или внешний адрес), ящик, учётная запись, пароль и часовой пояс календаря. Во время операции недоступно." />
+                        ToolTip="Куда копировать (и что очищать): сервер Exchange по EWS, ящик, учётная запись, пароль, часовой пояс календаря. Во время операции недоступно." />
+                <Button Grid.Column="3" Margin="8,0,0,0" Content="Исто_чник (EWS)…" VerticalAlignment="Center"
+                        AutomationProperties.AutomationId="EditSourceButton"
+                        Command="{Binding EditSourceCommand}"
+                        ToolTip="Необязательно: откуда копировать, если не из Outlook этого компьютера, — другой сервер Exchange по EWS." />
             </Grid>
         </Border>
 
-        <!-- Демонстрационный режим — видно всегда, чтобы не спутать с настоящим ящиком. -->
-        <Border DockPanel.Dock="Top" Background="{DynamicResource WarningBackBrush}" BorderBrush="{DynamicResource WarningLineBrush}"
-                BorderThickness="0,0,0,1" Padding="20,8"
+        <!-- Демонстрационный режим — строкой состояния внизу, видно всегда, чтобы не спутать с настоящим ящиком. -->
+        <Border DockPanel.Dock="Bottom" Background="{DynamicResource WarningBackBrush}" BorderBrush="{DynamicResource WarningLineBrush}"
+                BorderThickness="0,1,0,0" Padding="20,6"
                 Visibility="{Binding IsDemo, Converter={StaticResource VisibleWhen}}">
             <TextBlock TextWrapping="Wrap"
-                       Text="Демонстрационный режим: календарь выдуманный, сервер не используется. Удаление настоящих событий здесь невозможно." />
+                       Text="Демонстрационный режим: календари выдуманные, сервер и Outlook не используются." />
         </Border>
 
-        <!-- Отступы страницы заданы самой прокрутке (Padding): её видимая высота тогда уже без отступов, и страница
-             ровно в окно не даёт лишней полосы прокрутки. FillPanel отдаёт карточке со списком всё свободное место. -->
-        <ScrollViewer x:Name="Page" Padding="20,16" Focusable="False"
-                      VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-            <views:FillPanel x:Name="PageContent" DataContext="{Binding Cleanup}"
-                             ViewportHeight="{Binding ViewportHeight, ElementName=Page}">
+        <!-- Выбор операции. Во время операции вкладка не переключается (модель не даёт), а «Остановить» доступна. -->
+        <TabControl Style="{StaticResource OperationTabs}" SelectedIndex="{Binding OperationIndex}" AutomationProperties.Name="Операция">
+            <TabItem Header="_Копирование" AutomationProperties.AutomationId="CopyTab"
+                     ToolTip="Скопировать события из одного календаря в другой: из Outlook этого компьютера или с сервера по EWS — в приёмник">
+                <views:CopyPage DataContext="{Binding Copy}" />
+            </TabItem>
+            <TabItem Header="Оч_истка" AutomationProperties.AutomationId="CleanupTab"
+                     ToolTip="Удалить события из календаря подключённого ящика — с предпросмотром и подтверждением">
 
-                <!-- Нет подключения -->
-                <Border Style="{StaticResource Card}"
-                        Visibility="{Binding HasSession, Converter={StaticResource VisibleWhen}, ConverterParameter=invert}">
-                    <StackPanel>
-                        <TextBlock Style="{StaticResource SectionText}" Text="Подключение не настроено" />
-                        <TextBlock TextWrapping="Wrap"
-                                   Text="Укажите сервер и учётную запись — кнопка «Подключение…» вверху окна (Alt+Д)." />
-                    </StackPanel>
-                </Border>
+                <!-- Отступы страницы заданы самой прокрутке (Padding): её видимая высота тогда уже без отступов, и
+                     страница ровно в окно не даёт лишней полосы прокрутки. FillPanel отдаёт карточке со списком всё
+                     свободное место. -->
+                <ScrollViewer x:Name="Page" Padding="20,14" Focusable="False"
+                              VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <views:FillPanel x:Name="PageContent" DataContext="{Binding Cleanup}"
+                                     ViewportHeight="{Binding ViewportHeight, ElementName=Page}">
 
-                <!-- Шаг 1. Что удалить -->
-                <Border Style="{StaticResource Card}"
-                        Visibility="{Binding HasSession, Converter={StaticResource VisibleWhen}}">
-                    <StackPanel>
-                        <TextBlock Style="{StaticResource SectionText}" Text="1. Что удалить" />
-
-                        <StackPanel IsEnabled="{Binding IsIdle}">
-                            <RadioButton GroupName="Scope" IsChecked="{Binding IsPeriod}" Content="События за п_ериод"
-                                         ToolTip="События, которые хотя бы частично попадают в период. У повторяющихся серий на границе удаляются только экземпляры внутри периода." />
-                            <WrapPanel Margin="26,2,0,0">
-                                <StackPanel Orientation="Horizontal" Margin="0,2,16,2" IsEnabled="{Binding IsPeriod}">
-                                    <TextBlock Text="с" VerticalAlignment="Center" Margin="0,0,8,0" />
-                                    <DatePicker Width="150" SelectedDate="{Binding PeriodStart}"
-                                                AutomationProperties.Name="Первый день периода"
-                                                ToolTip="Первый день периода, дд.мм.гггг" />
-                                    <TextBlock Text="по" VerticalAlignment="Center" Margin="12,0,8,0" />
-                                    <DatePicker Width="150" SelectedDate="{Binding PeriodEnd}"
-                                                AutomationProperties.Name="Последний день периода"
-                                                ToolTip="Последний день периода, дд.мм.гггг. День входит в период целиком." />
-                                    <TextBlock VerticalAlignment="Center" Margin="8,0,0,0" Foreground="{DynamicResource MutedTextBrush}"
-                                               Text="включительно" />
-                                </StackPanel>
-                                <!-- Быстрый выбор периода сам переключает на «События за период». -->
-                                <StackPanel Orientation="Horizontal" Margin="0,2" VerticalAlignment="Center">
-                                    <Button Style="{StaticResource LinkButton}" VerticalAlignment="Center"
-                                            Content="последний месяц" Command="{Binding SetLastMonthCommand}"
-                                            ToolTip="С этого же числа месяц назад по сегодня" />
-                                    <Button Style="{StaticResource LinkButton}" Margin="10,0,0,0" VerticalAlignment="Center"
-                                            Content="с начала года" Command="{Binding SetThisYearCommand}"
-                                            ToolTip="С 1 января по сегодня" />
-                                </StackPanel>
-                            </WrapPanel>
-
-                            <RadioButton GroupName="Scope" IsChecked="{Binding IsWholeCalendar}" Content="_Весь календарь"
-                                         Margin="0,10,0,0" />
-                            <TextBlock Style="{StaticResource HintText}" Margin="26,0,0,0"
-                                       Text="Удаляются все события основного календаря ящика, включая ваши собственные. Сначала программа покажет полный список." />
-                        </StackPanel>
-
-                        <Grid Margin="0,12,0,0">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <StackPanel VerticalAlignment="Center">
-                                <TextBlock Style="{StaticResource HintText}" Margin="0">
-                                    <Run Text="Даты и время — в часовом поясе календаря" />
-                                    <Run Text="{Binding TimeZoneText, Mode=OneWay}" /><Run Text="." />
-                                </TextBlock>
-                                <TextBlock Style="{StaticResource FieldErrorText}" views:Announce.Text="{Binding ValidationError}"
-                                           AutomationProperties.LiveSetting="Assertive" />
+                        <!-- Нет подключения -->
+                        <Border Style="{StaticResource Card}"
+                                Visibility="{Binding HasSession, Converter={StaticResource VisibleWhen}, ConverterParameter=invert}">
+                            <StackPanel>
+                                <TextBlock Style="{StaticResource SectionText}" Text="Подключение не настроено" />
+                                <TextBlock TextWrapping="Wrap"
+                                           Text="Очистить можно календарь подключённого ящика — кнопка «Приёмник…» или «Источник (EWS)…» вверху окна." />
                             </StackPanel>
-                            <!-- Кнопка по умолчанию (Enter) — пока предпросмотра нет; с готовым списком Enter ничего не
-                                 перестраивает. -->
-                            <Button Grid.Column="1" Margin="16,0,0,0" VerticalAlignment="Bottom" Style="{StaticResource PrimaryButton}"
-                                    Content="_Показать, что будет удалено"
-                                    AutomationProperties.AutomationId="PreviewButton"
-                                    Command="{Binding PreviewCommand}"
-                                    IsDefault="{Binding HasPreview, Converter={StaticResource Not}}"
-                                    ToolTip="Прочитать календарь и показать, что будет удалено и что останется. Календарь при этом не меняется. (F5)" />
-                        </Grid>
-                    </StackPanel>
-                </Border>
+                        </Border>
 
-                <!-- Ход работы, ошибка, итог -->
-                <StackPanel>
-                    <Border Style="{StaticResource Card}" Visibility="{Binding IsBusy, Converter={StaticResource VisibleWhen}}">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <StackPanel VerticalAlignment="Center">
-                                <TextBlock Text="{Binding ProgressText}" TextTrimming="CharacterEllipsis" Margin="0,0,0,6" />
-                                <ProgressBar Height="8" Minimum="0" Maximum="{Binding ProgressMaximum, Mode=OneWay}"
-                                             Value="{Binding ProgressValue, Mode=OneWay}"
-                                             IsIndeterminate="{Binding IsProgressIndeterminate, Mode=OneWay}"
-                                             AutomationProperties.Name="Ход работы" />
+                        <!-- Шаг 1. Какой ящик и что удалить -->
+                        <Border Style="{StaticResource Card}"
+                                Visibility="{Binding HasSession, Converter={StaticResource VisibleWhen}}">
+                            <StackPanel>
+                                <!-- Заголовок и выбор ящика — одной строкой (приёмник или источник по EWS). -->
+                                <Grid Margin="0,0,0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" MaxWidth="520" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Style="{StaticResource SectionText}" Margin="0,0,24,0" VerticalAlignment="Center"
+                                               Text="1. Что удалить" />
+                                    <Label Grid.Column="1" Content="Я_щик" Target="{Binding ElementName=CleanupMailbox}" Padding="0,0,10,0"
+                                           VerticalAlignment="Center" IsEnabled="{Binding IsIdle}" />
+                                    <ComboBox x:Name="CleanupMailbox" Grid.Column="2" DisplayMemberPath="Label" IsEnabled="{Binding IsIdle}"
+                                              ItemsSource="{Binding DataContext.CleanupChoices, RelativeSource={RelativeSource AncestorType=Window}}"
+                                              SelectedItem="{Binding DataContext.CleanupChoice, RelativeSource={RelativeSource AncestorType=Window}}"
+                                              AutomationProperties.Name="Какой ящик очищать" AutomationProperties.AutomationId="CleanupMailbox"
+                                              ToolTip="Календарь какого подключённого ящика очищать: приёмника или источника по EWS" />
+                                </Grid>
+
+                                <StackPanel IsEnabled="{Binding IsIdle}">
+                                    <RadioButton GroupName="Scope" IsChecked="{Binding IsPeriod}" Content="События за п_ериод"
+                                                 ToolTip="События, которые хотя бы частично попадают в период. У повторяющихся серий на границе удаляются только экземпляры внутри периода." />
+                                    <WrapPanel Margin="26,2,0,0">
+                                        <StackPanel Orientation="Horizontal" Margin="0,2,16,2" IsEnabled="{Binding IsPeriod}">
+                                            <TextBlock Text="с" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                            <DatePicker Width="150" SelectedDate="{Binding PeriodStart}"
+                                                        AutomationProperties.Name="Первый день периода"
+                                                        ToolTip="Первый день периода, дд.мм.гггг" />
+                                            <TextBlock Text="по" VerticalAlignment="Center" Margin="12,0,8,0" />
+                                            <DatePicker Width="150" SelectedDate="{Binding PeriodEnd}"
+                                                        AutomationProperties.Name="Последний день периода"
+                                                        ToolTip="Последний день периода, дд.мм.гггг. День входит в период целиком." />
+                                            <TextBlock VerticalAlignment="Center" Margin="8,0,0,0" Foreground="{DynamicResource MutedTextBrush}"
+                                                       Text="включительно" />
+                                        </StackPanel>
+                                        <!-- Быстрый выбор периода сам переключает на «События за период». -->
+                                        <StackPanel Orientation="Horizontal" Margin="0,2" VerticalAlignment="Center">
+                                            <Button Style="{StaticResource LinkButton}" VerticalAlignment="Center"
+                                                    Content="последний месяц" Command="{Binding SetLastMonthCommand}"
+                                                    ToolTip="С этого же числа месяц назад по сегодня" />
+                                            <Button Style="{StaticResource LinkButton}" Margin="10,0,0,0" VerticalAlignment="Center"
+                                                    Content="с начала года" Command="{Binding SetThisYearCommand}"
+                                                    ToolTip="С 1 января по сегодня" />
+                                        </StackPanel>
+                                    </WrapPanel>
+
+                                    <WrapPanel Margin="0,8,0,0">
+                                        <RadioButton GroupName="Scope" IsChecked="{Binding IsWholeCalendar}" Content="_Весь календарь"
+                                                     Margin="0,0,12,0" VerticalAlignment="Center"
+                                                     ToolTip="Все события основного календаря ящика, включая ваши собственные" />
+                                        <TextBlock Style="{StaticResource HintText}" Margin="0" VerticalAlignment="Center"
+                                                   Text="все события основного календаря, включая ваши; сначала — полный список" />
+                                    </WrapPanel>
+                                </StackPanel>
+
+                                <Grid Margin="0,10,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Style="{StaticResource HintText}" Margin="0">
+                                            <Run Text="Даты и время — в часовом поясе календаря" />
+                                            <Run Text="{Binding TimeZoneText, Mode=OneWay}" /><Run Text="." />
+                                        </TextBlock>
+                                        <TextBlock Style="{StaticResource FieldErrorText}" views:Announce.Text="{Binding ValidationError}"
+                                                   AutomationProperties.LiveSetting="Assertive" />
+                                    </StackPanel>
+                                    <!-- Кнопка по умолчанию (Enter) — пока предпросмотра нет; с готовым списком Enter ничего не
+                                         перестраивает. -->
+                                    <Button Grid.Column="1" Margin="16,0,0,0" VerticalAlignment="Bottom" Style="{StaticResource PrimaryButton}"
+                                            Content="_Показать, что будет удалено"
+                                            AutomationProperties.AutomationId="PreviewButton"
+                                            Command="{Binding PreviewCommand}"
+                                            IsDefault="{Binding HasPreview, Converter={StaticResource Not}}"
+                                            ToolTip="Прочитать календарь и показать, что будет удалено и что останется. Календарь при этом не меняется. (F5)" />
+                                </Grid>
                             </StackPanel>
-                            <Button Grid.Column="1" Margin="16,0,0,0" Content="_Остановить" Command="{Binding StopCommand}"
-                                    ToolTip="Чтение прерывается сразу, удаление — после текущего пакета: уже удалённое записано в список. (Esc)" />
-                        </Grid>
-                    </Border>
+                        </Border>
 
-                    <Border Style="{StaticResource ErrorBanner}" Visibility="{Binding HasError, Converter={StaticResource VisibleWhen}}">
+                        <!-- Ход работы, ошибка, итог -->
                         <StackPanel>
-                            <TextBlock FontWeight="SemiBold" Foreground="{DynamicResource ErrorTextBrush}" TextWrapping="Wrap"
-                                       views:Announce.Text="{Binding Error.Title}" AutomationProperties.LiveSetting="Assertive" />
-                            <TextBlock TextWrapping="Wrap" Margin="0,4,0,0" Text="{Binding Error.Hint}" />
-                            <Expander Header="Подробности для администратора" Margin="0,6,0,0"
-                                      Visibility="{Binding Error.HasDetails, Converter={StaticResource VisibleWhen}}">
-                                <TextBox IsReadOnly="True" TextWrapping="Wrap" Margin="0,4,0,0" BorderThickness="0" Background="Transparent"
-                                         MaxHeight="200" VerticalScrollBarVisibility="Auto"
-                                         Text="{Binding Error.Details, Mode=OneWay}" AutomationProperties.Name="Подробности ошибки" />
-                            </Expander>
-                        </StackPanel>
-                    </Border>
+                            <Border Style="{StaticResource Card}" Visibility="{Binding IsBusy, Converter={StaticResource VisibleWhen}}">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding ProgressText}" TextTrimming="CharacterEllipsis" Margin="0,0,0,6" />
+                                        <ProgressBar Height="8" Minimum="0" Maximum="{Binding ProgressMaximum, Mode=OneWay}"
+                                                     Value="{Binding ProgressValue, Mode=OneWay}"
+                                                     IsIndeterminate="{Binding IsProgressIndeterminate, Mode=OneWay}"
+                                                     AutomationProperties.Name="Ход работы" />
+                                    </StackPanel>
+                                    <Button Grid.Column="1" Margin="16,0,0,0" Content="_Остановить" Command="{Binding StopCommand}"
+                                            ToolTip="Чтение прерывается сразу, удаление — после текущего пакета: уже удалённое записано в список. (Esc)" />
+                                </Grid>
+                            </Border>
 
-                    <Border Visibility="{Binding HasResult, Converter={StaticResource VisibleWhen}}">
-                        <Border.Style>
-                            <Style TargetType="Border" BasedOn="{StaticResource InfoBanner}">
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding ResultIsSuccess}" Value="True">
-                                        <Setter Property="Background" Value="{DynamicResource SuccessBackBrush}" />
-                                        <Setter Property="BorderBrush" Value="{DynamicResource SuccessLineBrush}" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Border.Style>
-                        <StackPanel>
-                            <TextBlock FontWeight="SemiBold" FontSize="16" TextWrapping="Wrap"
-                                       views:Announce.Text="{Binding ResultTitle}" AutomationProperties.LiveSetting="Polite" />
-                            <TextBlock TextWrapping="Wrap" Margin="0,4,0,0" Text="{Binding ResultText}" />
-                            <Button Style="{StaticResource LinkButton}" HorizontalAlignment="Left" Margin="0,8,0,0"
-                                    Content="Показать список удалённого (файл CSV)" Command="{Binding ShowManifestCommand}"
-                                    Visibility="{Binding ManifestPath, Converter={StaticResource VisibleWhen}}"
-                                    ToolTip="Откроет папку с файлом: что удалялось, когда и с каким итогом. Открывается в Excel." />
-                        </StackPanel>
-                    </Border>
-                </StackPanel>
-
-                <!-- Шаг 2. Предпросмотр: заполняет свободное место окна, но не ниже MinHeight (на маленьком окне
-                     прокручивается страница, а таблице остаётся не меньше нескольких строк). -->
-                <Border Style="{StaticResource Card}" views:FillPanel.Fill="True" MinHeight="260"
-                        Visibility="{Binding HasPreview, Converter={StaticResource VisibleWhen}}">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="*" />
-                        </Grid.RowDefinitions>
-
-                        <StackPanel Grid.Row="0">
-                            <TextBlock Style="{StaticResource SectionText}" Text="2. Проверьте список" />
-                            <WrapPanel>
-                                <TextBlock FontSize="16" Text="Будет удалено:" Margin="0,0,6,0" />
-                                <TextBlock FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap"
-                                           views:Announce.Text="{Binding Summary}" AutomationProperties.LiveSetting="Polite" />
-                            </WrapPanel>
-                            <TextBlock Style="{StaticResource HintText}" Visibility="{Binding TrimmedSeriesCount, Converter={StaticResource VisibleWhen}}">
-                                <Run Text="Серий на границе периода:" />
-                                <Run Text="{Binding TrimmedSeriesCount, Mode=OneWay, StringFormat={}{0:N0}}" /><Run Text=" — у них удаляются только экземпляры внутри периода, сами серии остаются." />
-                            </TextBlock>
-                        </StackPanel>
-
-                        <!-- Отступы — у самих полос: скрытые полосы места не занимают. -->
-                        <StackPanel Grid.Row="1">
-                            <Border Style="{StaticResource ErrorBanner}" Margin="0,10,0,0" Visibility="{Binding IsBlocked, Converter={StaticResource VisibleWhen}}">
+                            <Border Style="{StaticResource ErrorBanner}" Visibility="{Binding HasError, Converter={StaticResource VisibleWhen}}">
                                 <StackPanel>
-                                    <TextBlock FontWeight="SemiBold" Foreground="{DynamicResource ErrorTextBrush}"
-                                               Text="Удалять по этим данным нельзя" />
-                                    <TextBlock TextWrapping="Wrap" Margin="0,4,0,0" Text="{Binding BlockReason}" />
-                                    <TextBlock TextWrapping="Wrap" Margin="0,4,0,0"
-                                               Text="Программа удаляет только по полностью прочитанному календарю. Повторите предпросмотр позже." />
+                                    <TextBlock FontWeight="SemiBold" Foreground="{DynamicResource ErrorTextBrush}" TextWrapping="Wrap"
+                                               views:Announce.Text="{Binding Error.Title}" AutomationProperties.LiveSetting="Assertive" />
+                                    <TextBlock TextWrapping="Wrap" Margin="0,4,0,0" Text="{Binding Error.Hint}" />
+                                    <Expander Header="Подробности для администратора" Margin="0,6,0,0"
+                                              Visibility="{Binding Error.HasDetails, Converter={StaticResource VisibleWhen}}">
+                                        <TextBox IsReadOnly="True" TextWrapping="Wrap" Margin="0,4,0,0" BorderThickness="0" Background="Transparent"
+                                                 MaxHeight="200" VerticalScrollBarVisibility="Auto"
+                                                 Text="{Binding Error.Details, Mode=OneWay}" AutomationProperties.Name="Подробности ошибки" />
+                                    </Expander>
                                 </StackPanel>
                             </Border>
-                            <Border Style="{StaticResource InfoBanner}" Margin="0,10,0,0" Visibility="{Binding NothingToDelete, Converter={StaticResource VisibleWhen}}">
-                                <TextBlock TextWrapping="Wrap" Text="Под выбранные условия ничего не попало — удалять нечего." />
+
+                            <Border Visibility="{Binding HasResult, Converter={StaticResource VisibleWhen}}">
+                                <Border.Style>
+                                    <Style TargetType="Border" BasedOn="{StaticResource InfoBanner}">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding ResultIsSuccess}" Value="True">
+                                                <Setter Property="Background" Value="{DynamicResource SuccessBackBrush}" />
+                                                <Setter Property="BorderBrush" Value="{DynamicResource SuccessLineBrush}" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                                <StackPanel>
+                                    <TextBlock FontWeight="SemiBold" FontSize="16" TextWrapping="Wrap"
+                                               views:Announce.Text="{Binding ResultTitle}" AutomationProperties.LiveSetting="Polite" />
+                                    <TextBlock TextWrapping="Wrap" Margin="0,4,0,0" Text="{Binding ResultText}" />
+                                    <Button Style="{StaticResource LinkButton}" HorizontalAlignment="Left" Margin="0,8,0,0"
+                                            Content="Показать список удалённого (файл CSV)" Command="{Binding ShowManifestCommand}"
+                                            Visibility="{Binding ManifestPath, Converter={StaticResource VisibleWhen}}"
+                                            ToolTip="Откроет папку с файлом: что удалялось, когда и с каким итогом. Открывается в Excel." />
+                                </StackPanel>
                             </Border>
                         </StackPanel>
 
-                        <TabControl Grid.Row="2" Margin="0,10,0,0">
-                            <TabItem>
-                                <TabItem.Header>
-                                    <TextBlock>
-                                        <Run Text="Будет удалено" />
-                                        <Run Text="{Binding DeleteRowCount, Mode=OneWay, StringFormat=({0:N0})}" />
-                                    </TextBlock>
-                                </TabItem.Header>
-                                <DataGrid ItemsSource="{Binding DeleteRows}" AutomationProperties.Name="Список удаляемого">
-                                    <DataGrid.Columns>
-                                        <DataGridTextColumn Header="Вид" Binding="{Binding Kind}" Width="150" MinWidth="90"
-                                                            ElementStyle="{StaticResource TrimmedCell}" />
-                                        <DataGridTextColumn Header="Тема" Binding="{Binding Subject}" Width="*" MinWidth="120"
-                                                            ElementStyle="{StaticResource TrimmedCell}" />
-                                        <DataGridTextColumn Header="Начало" Binding="{Binding Start}" Width="135" MinWidth="90"
-                                                            ElementStyle="{StaticResource PlainCell}" />
-                                        <DataGridTextColumn Header="Конец" Binding="{Binding End}" Width="135" MinWidth="90"
-                                                            ElementStyle="{StaticResource PlainCell}" />
-                                    </DataGrid.Columns>
-                                </DataGrid>
-                            </TabItem>
-                            <TabItem>
-                                <TabItem.Header>
-                                    <TextBlock>
-                                        <Run Text="Останется" />
-                                        <Run Text="{Binding KeptRowCount, Mode=OneWay, StringFormat=({0:N0})}" />
-                                    </TextBlock>
-                                </TabItem.Header>
-                                <DataGrid ItemsSource="{Binding KeptRows}" AutomationProperties.Name="Список остающегося">
-                                    <DataGrid.Columns>
-                                        <DataGridTextColumn Header="Вид" Binding="{Binding Kind}" Width="110" MinWidth="80"
-                                                            ElementStyle="{StaticResource TrimmedCell}" />
-                                        <DataGridTextColumn Header="Тема" Binding="{Binding Subject}" Width="*" MinWidth="120"
-                                                            ElementStyle="{StaticResource TrimmedCell}" />
-                                        <DataGridTextColumn Header="Начало" Binding="{Binding Start}" Width="135" MinWidth="90"
-                                                            ElementStyle="{StaticResource PlainCell}" />
-                                        <DataGridTextColumn Header="Почему остаётся" Binding="{Binding Reason}" Width="1.3*" MinWidth="140"
-                                                            ElementStyle="{StaticResource TrimmedCell}" />
-                                    </DataGrid.Columns>
-                                </DataGrid>
-                            </TabItem>
-                        </TabControl>
-                    </Grid>
-                </Border>
+                        <!-- Шаг 2. Предпросмотр и удаление: заполняет свободное место окна, но не ниже MinHeight (на
+                             маленьком окне прокручивается страница, а таблице остаётся не меньше нескольких строк).
+                             Удаление — нижней строкой той же карточки: не сжимается, кнопка всегда видна или достижима. -->
+                        <Border Style="{StaticResource Card}" Margin="0" views:FillPanel.Fill="True" MinHeight="300"
+                                Visibility="{Binding HasPreview, Converter={StaticResource VisibleWhen}}">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
 
-                <!-- Шаг 3. Удаление: отдельная карточка под списком — не сжимается, кнопка всегда видна или достижима
-                     прокруткой страницы. -->
-                <Border Style="{StaticResource Card}" Margin="0"
-                        Visibility="{Binding HasPreview, Converter={StaticResource VisibleWhen}}">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <StackPanel IsEnabled="{Binding IsIdle}">
-                                <TextBlock Style="{StaticResource SectionText}" Text="3. Удаление" Margin="0,0,0,4" />
-                                <!-- В широком окне варианты в строку, в узком — друг под другом. -->
-                                <WrapPanel>
-                                    <RadioButton GroupName="Mode" IsChecked="{Binding HardDelete, Converter={StaticResource Not}}" Margin="0,4,24,4"
-                                                 ToolTip="Элементы переносятся в папку «Удалённые» ящика; события можно вернуть перетаскиванием в календарь."
-                                                 Content="В папку «Удалённые» — можно вернуть (рекомендуется)" />
-                                    <RadioButton GroupName="Mode" IsChecked="{Binding HardDelete}"
-                                                 ToolTip="Элементы удаляются, минуя папку «Удалённые»: вернуть их из Outlook будет нельзя."
-                                                 Content="Окончательно — вернуть будет нельзя" />
-                                </WrapPanel>
-                            </StackPanel>
-                            <Button Grid.Column="1" Margin="16,0,0,0" VerticalAlignment="Bottom" Style="{StaticResource DangerButton}"
-                                    Content="_Удалить…" Command="{Binding DeleteCommand}"
-                                    AutomationProperties.AutomationId="DeleteButton"
-                                    ToolTip="Откроется окно подтверждения: в нём нужно ввести адрес ящика. Перед удалением список сохраняется в файл." />
-                        </Grid>
-                </Border>
-            </views:FillPanel>
-        </ScrollViewer>
+                                <StackPanel Grid.Row="0">
+                                    <WrapPanel>
+                                        <TextBlock Style="{StaticResource SectionText}" Margin="0,0,16,4" Text="2. Проверьте список" />
+                                        <TextBlock FontSize="16" Text="Будет удалено:" Margin="0,0,6,4" />
+                                        <TextBlock FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,4"
+                                                   views:Announce.Text="{Binding Summary}" AutomationProperties.LiveSetting="Polite" />
+                                    </WrapPanel>
+                                    <TextBlock Style="{StaticResource HintText}" Visibility="{Binding TrimmedSeriesCount, Converter={StaticResource VisibleWhen}}">
+                                        <Run Text="Серий на границе периода:" />
+                                        <Run Text="{Binding TrimmedSeriesCount, Mode=OneWay, StringFormat={}{0:N0}}" /><Run Text=" — у них удаляются только экземпляры внутри периода, сами серии остаются." />
+                                    </TextBlock>
+                                </StackPanel>
+
+                                <!-- Отступы — у самих полос: скрытые полосы места не занимают. -->
+                                <StackPanel Grid.Row="1">
+                                    <Border Style="{StaticResource ErrorBanner}" Margin="0,8,0,0" Visibility="{Binding IsBlocked, Converter={StaticResource VisibleWhen}}">
+                                        <StackPanel>
+                                            <TextBlock FontWeight="SemiBold" Foreground="{DynamicResource ErrorTextBrush}"
+                                                       Text="Удалять по этим данным нельзя" />
+                                            <TextBlock TextWrapping="Wrap" Margin="0,4,0,0" Text="{Binding BlockReason}" />
+                                            <TextBlock TextWrapping="Wrap" Margin="0,4,0,0"
+                                                       Text="Программа удаляет только по полностью прочитанному календарю. Повторите предпросмотр позже." />
+                                        </StackPanel>
+                                    </Border>
+                                    <Border Style="{StaticResource InfoBanner}" Margin="0,8,0,0" Visibility="{Binding NothingToDelete, Converter={StaticResource VisibleWhen}}">
+                                        <TextBlock TextWrapping="Wrap" Text="Под выбранные условия ничего не попало — удалять нечего." />
+                                    </Border>
+                                </StackPanel>
+
+                                <TabControl x:Name="CleanupLists" Grid.Row="2" Margin="0,8,0,0">
+                                    <TabItem>
+                                        <TabItem.Header>
+                                            <TextBlock>
+                                                <Run Text="Будет удалено" />
+                                                <Run Text="{Binding DeleteRowCount, Mode=OneWay, StringFormat=({0:N0})}" />
+                                            </TextBlock>
+                                        </TabItem.Header>
+                                        <DataGrid ItemsSource="{Binding DeleteRows}" AutomationProperties.Name="Список удаляемого">
+                                            <DataGrid.Columns>
+                                                <DataGridTextColumn Header="Вид" Binding="{Binding Kind}" Width="150" MinWidth="90"
+                                                                    ElementStyle="{StaticResource TrimmedCell}" />
+                                                <DataGridTextColumn Header="Тема" Binding="{Binding Subject}" Width="*" MinWidth="120"
+                                                                    ElementStyle="{StaticResource TrimmedCell}" />
+                                                <DataGridTextColumn Header="Начало" Binding="{Binding Start}" Width="135" MinWidth="90"
+                                                                    ElementStyle="{StaticResource PlainCell}" />
+                                                <DataGridTextColumn Header="Конец" Binding="{Binding End}" Width="135" MinWidth="90"
+                                                                    ElementStyle="{StaticResource PlainCell}" />
+                                            </DataGrid.Columns>
+                                        </DataGrid>
+                                    </TabItem>
+                                    <TabItem>
+                                        <TabItem.Header>
+                                            <TextBlock>
+                                                <Run Text="Останется" />
+                                                <Run Text="{Binding KeptRowCount, Mode=OneWay, StringFormat=({0:N0})}" />
+                                            </TextBlock>
+                                        </TabItem.Header>
+                                        <DataGrid ItemsSource="{Binding KeptRows}" AutomationProperties.Name="Список остающегося">
+                                            <DataGrid.Columns>
+                                                <DataGridTextColumn Header="Вид" Binding="{Binding Kind}" Width="110" MinWidth="80"
+                                                                    ElementStyle="{StaticResource TrimmedCell}" />
+                                                <DataGridTextColumn Header="Тема" Binding="{Binding Subject}" Width="*" MinWidth="120"
+                                                                    ElementStyle="{StaticResource TrimmedCell}" />
+                                                <DataGridTextColumn Header="Начало" Binding="{Binding Start}" Width="135" MinWidth="90"
+                                                                    ElementStyle="{StaticResource PlainCell}" />
+                                                <DataGridTextColumn Header="Почему остаётся" Binding="{Binding Reason}" Width="1.3*" MinWidth="140"
+                                                                    ElementStyle="{StaticResource TrimmedCell}" />
+                                            </DataGrid.Columns>
+                                        </DataGrid>
+                                    </TabItem>
+                                </TabControl>
+
+                                <!-- Шаг 3. Удаление -->
+                                <Border Grid.Row="3" Margin="0,12,0,0" Padding="0,10,0,0" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <!-- В широком окне варианты в строку, в узком — друг под другом. -->
+                                        <WrapPanel IsEnabled="{Binding IsIdle}" VerticalAlignment="Center">
+                                            <TextBlock Style="{StaticResource SectionText}" Text="3. Удалить:" Margin="0,2,16,2" VerticalAlignment="Center" />
+                                            <RadioButton GroupName="Mode" IsChecked="{Binding HardDelete, Converter={StaticResource Not}}" Margin="0,4,24,4"
+                                                         VerticalAlignment="Center"
+                                                         ToolTip="Элементы переносятся в папку «Удалённые» ящика; события можно вернуть перетаскиванием в календарь."
+                                                         Content="в папку «Удалённые» — можно вернуть" />
+                                            <RadioButton GroupName="Mode" IsChecked="{Binding HardDelete}" Margin="0,4" VerticalAlignment="Center"
+                                                         ToolTip="Элементы удаляются, минуя папку «Удалённые»: вернуть их из Outlook будет нельзя."
+                                                         Content="окончательно — вернуть нельзя" />
+                                        </WrapPanel>
+                                        <Button Grid.Column="1" Margin="16,0,0,0" VerticalAlignment="Center" Style="{StaticResource DangerButton}"
+                                                Content="_Удалить…" Command="{Binding DeleteCommand}"
+                                                AutomationProperties.AutomationId="DeleteButton"
+                                                ToolTip="Откроется окно подтверждения: в нём нужно ввести адрес ящика. Перед удалением список сохраняется в файл." />
+                                    </Grid>
+                                </Border>
+                            </Grid>
+                        </Border>
+                    </views:FillPanel>
+                </ScrollViewer>
+            </TabItem>
+        </TabControl>
     </DockPanel>
 </Window>

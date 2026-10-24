@@ -2,6 +2,7 @@ using System;
 using IwoBridge.App.Cleanup;
 using IwoBridge.Core.Configuration;
 using IwoBridge.Core.Security;
+using IwoBridge.Core.Sync;
 using IwoBridge.Core.Time;
 using IwoBridge.Ews;
 using IwoBridge.Wpf.Messages;
@@ -57,7 +58,13 @@ namespace IwoBridge.Wpf.Services
 
         public CleanupRunner Runner { get; }
 
+        public ICopyTarget CopyTarget => _target.CopyTarget;
+
+        public ISourceCalendar Source => _target.Source;
+
         public bool IsDemo => false;
+
+        public bool StopsBatch(Exception exception) => EwsTarget.StopsBatch(exception);
 
         public UserMessage Describe(Exception exception)
         {

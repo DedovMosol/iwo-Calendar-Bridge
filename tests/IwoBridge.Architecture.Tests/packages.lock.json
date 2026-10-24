@@ -119,7 +119,7 @@
       "iwobridge.app": {
         "type": "Project",
         "dependencies": {
-          "IwoBridge.Core": "[1.0.0, )"
+          "IwoBridge.Core": "[0.9.0, )"
         }
       },
       "iwobridge.core": {
@@ -128,23 +128,30 @@
       "iwobridge.ews": {
         "type": "Project",
         "dependencies": {
-          "IwoBridge.Core": "[1.0.0, )",
+          "IwoBridge.Core": "[0.9.0, )",
           "Microsoft.Exchange.WebServices": "[2.2.0, )"
         }
       },
       "iwobridge.inmemory": {
         "type": "Project",
         "dependencies": {
-          "IwoBridge.Core": "[1.0.0, )"
+          "IwoBridge.Core": "[0.9.0, )"
+        }
+      },
+      "iwobridge.outlook": {
+        "type": "Project",
+        "dependencies": {
+          "IwoBridge.Core": "[0.9.0, )"
         }
       },
       "IwoCalendarBridge": {
         "type": "Project",
         "dependencies": {
-          "IwoBridge.App": "[1.0.0, )",
-          "IwoBridge.Core": "[1.0.0, )",
-          "IwoBridge.Ews": "[1.0.0, )",
-          "IwoBridge.InMemory": "[1.0.0, )"
+          "IwoBridge.App": "[0.9.0, )",
+          "IwoBridge.Core": "[0.9.0, )",
+          "IwoBridge.Ews": "[0.9.0, )",
+          "IwoBridge.InMemory": "[0.9.0, )",
+          "IwoBridge.Outlook": "[0.9.0, )"
         }
       }
     }

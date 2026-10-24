@@ -45,11 +45,8 @@ namespace IwoBridge.Ews
         /// <summary>Класс для события без обязательных полей: не начинается с IPM.Appointment, поэтому не удаляется.</summary>
         private const string CorruptAppointmentClass = "IPM.Unreadable";
 
-        private readonly IReadOnlyList<ExchangeService> _services;
+        private readonly EwsChannel _channel;
         private readonly FolderId _calendarFolderId;
-        private readonly RetryPolicy _retry;
-        private readonly SemaphoreSlim _gate = new SemaphoreSlim(1, 1);
-        private int _active;
 
         /// <param name="service">Настроенный сервис (<see cref="Transport.ExchangeServiceFactory"/>).</param>
         /// <param name="mailboxAddress">Целевой ящик; пусто — ящик учётной записи.</param>
@@ -74,21 +71,26 @@ namespace IwoBridge.Ews
         /// </summary>
         /// <param name="services">Сервисы в порядке попытки; у каждого своя группа соединений и проверка сертификата.</param>
         public EwsCalendarGateway(IReadOnlyList<ExchangeService> services, string? mailboxAddress, RetryPolicy? retry = null)
+            : this(new EwsChannel(services, retry), CalendarOf(mailboxAddress))
         {
-            if (services is null || services.Count == 0 || services.Any(s => s is null))
-            {
-                throw new ArgumentException("Нужен хотя бы один сервис EWS.", nameof(services));
-            }
+        }
 
-            _services = services.ToArray();
-            _calendarFolderId = string.IsNullOrWhiteSpace(mailboxAddress)
-                ? new FolderId(WellKnownFolderName.Calendar)
-                : new FolderId(WellKnownFolderName.Calendar, new Mailbox(mailboxAddress));
-            _retry = retry ?? RetryPolicy.None;
+        internal EwsCalendarGateway(EwsChannel channel, FolderId calendarFolderId)
+        {
+            _channel = channel ?? throw new ArgumentNullException(nameof(channel));
+            _calendarFolderId = calendarFolderId ?? throw new ArgumentNullException(nameof(calendarFolderId));
         }
 
         /// <summary>Номер адреса, через который сейчас идут запросы (0 — основной).</summary>
-        public int ActiveEndpointIndex => Volatile.Read(ref _active);
+        public int ActiveEndpointIndex => _channel.ActiveIndex;
+
+        /// <summary>Основной календарь ящика: свой (пустой адрес) или указанного.</summary>
+        internal static FolderId CalendarOf(string? mailboxAddress)
+        {
+            return string.IsNullOrWhiteSpace(mailboxAddress)
+                ? new FolderId(WellKnownFolderName.Calendar)
+                : new FolderId(WellKnownFolderName.Calendar, new Mailbox(mailboxAddress));
+        }
 
         /// <summary>
         /// Проверка подключения: привязка к основному календарю целевого ящика и число элементов в нём. Один лёгкий
@@ -396,50 +398,10 @@ namespace IwoBridge.Ews
                 subject);
         }
 
-        /// <summary>
-        /// Один вызов EWS под семафором (в полёте не больше одного запроса), с переходом на другой адрес при
-        /// недоступности и с повторами временных ошибок. Пауза между попытками — вне семафора: ожидание не держит
-        /// очередь.
-        /// </summary>
+        /// <summary>Вызов EWS через канал ящика (семафор, переход на резервный адрес, повторы).</summary>
         private Task<T> RunExclusiveAsync<T>(Func<ExchangeService, T> work, CancellationToken cancellationToken, bool retry = true)
         {
-            return retry
-                ? _retry.ExecuteAsync(() => RunOnceAsync(work, cancellationToken), cancellationToken)
-                : RunOnceAsync(work, cancellationToken);
-        }
-
-        /// <summary>
-        /// Попытка по текущему адресу; недоступен — сразу по следующему (каждый адрес не больше одного раза за
-        /// попытку). Удачный адрес становится текущим. Номер адреса меняется только под семафором — гонок нет.
-        /// </summary>
-        private async Task<T> RunOnceAsync<T>(Func<ExchangeService, T> work, CancellationToken cancellationToken)
-        {
-            await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
-            try
-            {
-                int index = _active;
-                for (int tried = 1; ; tried++)
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    ExchangeService service = _services[index];
-                    try
-                    {
-                        T result = await System.Threading.Tasks.Task.Run(() => work(service)).ConfigureAwait(false);
-                        Volatile.Write(ref _active, index);
-                        return result;
-                    }
-                    catch (Exception ex) when (tried < _services.Count
-                        && !cancellationToken.IsCancellationRequested
-                        && ErrorClassifier.IsUnreachable(EwsErrorMapper.MapException(ex)))
-                    {
-                        index = (index + 1) % _services.Count;
-                    }
-                }
-            }
-            finally
-            {
-                _gate.Release();
-            }
+            return _channel.RunAsync(work, cancellationToken, retry);
         }
     }
 }

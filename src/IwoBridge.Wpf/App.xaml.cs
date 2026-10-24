@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Markup;
 using System.Windows.Threading;
+using IwoBridge.Core.Security;
 using IwoBridge.Ews.Security;
 using IwoBridge.Wpf.Services;
 using IwoBridge.Wpf.ViewModels;
@@ -35,6 +36,7 @@ namespace IwoBridge.Wpf
 
         private Mutex? _singleInstance;
         private IDisposable? _theme;
+        private OutlookCalendars? _outlook;
 
         protected override void OnStartup(StartupEventArgs e)
         {
@@ -61,7 +63,7 @@ namespace IwoBridge.Wpf
 
             var dialogs = new WpfDialogService();
             MainViewModel viewModel = e.Args.Any(a => string.Equals(a, "--demo", StringComparison.OrdinalIgnoreCase))
-                ? new MainViewModel(new DemoSession(DateTime.Today, DemoSession.DemoOffset), dialogs)
+                ? new MainViewModel(new DemoSession(DateTime.Today, DemoSession.DemoOffset), dialogs, new DemoSources())
                 : CreateMain(dialogs);
 
             MainWindow = new MainWindow(viewModel, dialogs);
@@ -71,6 +73,7 @@ namespace IwoBridge.Wpf
         protected override void OnExit(ExitEventArgs e)
         {
             _theme?.Dispose();
+            _outlook?.Dispose();
             if (_singleInstance != null)
             {
                 try
@@ -88,12 +91,15 @@ namespace IwoBridge.Wpf
             base.OnExit(e);
         }
 
-        private static MainViewModel CreateMain(WpfDialogService dialogs)
+        private MainViewModel CreateMain(WpfDialogService dialogs)
         {
             string root = AppDomain.CurrentDomain.BaseDirectory;
-            var settings = new AppSettingsStore(Path.Combine(root, "config", "connection.json"), new WindowsCredentialStore());
+            var credentials = new WindowsCredentialStore();
+            var target = new AppSettingsStore(Path.Combine(root, "config", "connection.json"), credentials, CredentialTargets.Ews);
+            var source = new AppSettingsStore(Path.Combine(root, "config", "source-connection.json"), credentials, CredentialTargets.EwsSource);
             var connector = new EwsConnector(Path.Combine(root, "manifests"));
-            return new MainViewModel(settings, connector, dialogs, dialogs, LocalOffset);
+            _outlook = new OutlookCalendars();
+            return new MainViewModel(target, connector, dialogs, dialogs, LocalOffset, source, _outlook);
         }
 
         private static TimeSpan LocalOffset()

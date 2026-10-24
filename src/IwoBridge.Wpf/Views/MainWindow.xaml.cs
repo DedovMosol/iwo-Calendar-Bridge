@@ -32,18 +32,22 @@ namespace IwoBridge.Wpf.Views
         protected override void OnClosing(CancelEventArgs e)
         {
             CleanupViewModel cleanup = ViewModel.Cleanup;
-            if (cleanup.IsBusy && !_closeAfterStop)
+            CopyViewModel copy = ViewModel.Copy;
+            if ((cleanup.IsBusy || copy.IsBusy) && !_closeAfterStop)
             {
                 e.Cancel = true;
-                bool deleting = cleanup.Step == CleanupStep.Deleting;
-                string question = deleting
-                    ? "Идёт удаление. Остановить его после текущего пакета и закрыть программу?\n\nУже удалённое останется удалённым и перечислено в списке удаляемого."
-                    : "Идёт чтение календаря. Прервать его и закрыть программу?";
+                string question = copy.IsBusy
+                    ? "Идёт копирование. Остановить его после текущего события и закрыть программу?\n\nУже записанное останется в приёмнике и будет учтено при следующем копировании."
+                    : cleanup.Step == CleanupStep.Deleting
+                        ? "Идёт удаление. Остановить его после текущего пакета и закрыть программу?\n\nУже удалённое останется удалённым и перечислено в списке удаляемого."
+                        : "Идёт чтение календаря. Прервать его и закрыть программу?";
                 if (_dialogs.Ask("Закрыть программу?", question))
                 {
                     _closeAfterStop = true;
+                    Task operation = copy.IsBusy ? copy.Operation : cleanup.Operation;
+                    copy.Stop();
                     cleanup.Stop();
-                    CloseWhenStopped(cleanup.Operation);
+                    CloseWhenStopped(operation);
                 }
 
                 return;
