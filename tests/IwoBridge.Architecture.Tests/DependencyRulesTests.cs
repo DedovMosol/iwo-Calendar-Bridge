@@ -57,7 +57,11 @@ namespace IwoBridge.Architecture.Tests
                 "WindowsBase",
                 "PresentationCore",
                 "PresentationFramework",
-                "System.Xaml"),
+                "System.Xaml",
+
+                // Значок в области уведомлений (NotifyIcon) и его картинка — для автокопирования при закрытом окне.
+                "System.Windows.Forms",
+                "System.Drawing"),
         };
 
         /// <summary>Проект → имя сборки, если они различаются.</summary>

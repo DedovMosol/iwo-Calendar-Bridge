@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using IwoBridge.App.Configuration;
 using IwoBridge.App.Copy;
 using IwoBridge.Core.Sync;
 using IwoBridge.Core.Time;
@@ -48,6 +49,20 @@ namespace IwoBridge.Wpf.ViewModels
         }
     }
 
+    /// <summary>Вариант для личных событий в списке.</summary>
+    public sealed class PrivacyOption
+    {
+        internal PrivacyOption(PrivateEvents value, string label)
+        {
+            Value = value;
+            Label = label;
+        }
+
+        public PrivateEvents Value { get; }
+
+        public string Label { get; }
+    }
+
     /// <summary>Откуда копировать.</summary>
     public enum SourceKind
     {
@@ -84,6 +99,16 @@ namespace IwoBridge.Wpf.ViewModels
         private bool _isLoadingOutlook;
         private string _calendarSearch = string.Empty;
         private readonly List<SourceChoice> _foundShared = new List<SourceChoice>();
+        private readonly ICopySettingsStore? _settingsStore;
+        private string? _savedCalendar;
+        private string? _savedCalendarKey;
+        private int _daysBack;
+        private int _daysForward;
+        private readonly Func<bool> _otherBusy;
+        private string? _savedOwner;
+        private string? _ownerOfFound;
+        private PrivacyOption _privacy;
+
         private DateTime? _periodStart;
         private DateTime? _periodEnd;
         private bool _allowMassDelete;
@@ -103,18 +128,45 @@ namespace IwoBridge.Wpf.ViewModels
         private UserMessage? _error;
         private CancellationTokenSource? _cancellation;
 
-        public CopyViewModel(IDialogService dialogs, IOutlookCalendars? outlook, Func<DateTime>? today = null)
+        /// <param name="settings">Настройки копирования между запусками; <c>null</c> — не запоминаются.</param>
+        /// <param name="timer">Таймер автокопирования; <c>null</c> — автокопирование не срабатывает (тесты экрана).</param>
+        /// <param name="autostart">Автозапуск с Windows; <c>null</c> — недоступен (демонстрационный режим).</param>
+        public CopyViewModel(
+            IDialogService dialogs,
+            IOutlookCalendars? outlook,
+            Func<DateTime>? today = null,
+            ICopySettingsStore? settings = null,
+            IOneShotTimer? timer = null,
+            IAutostart? autostart = null,
+            Func<bool>? otherBusy = null)
         {
             _dialogs = dialogs ?? throw new ArgumentNullException(nameof(dialogs));
             _outlook = outlook;
             _today = today ?? (() => DateTime.Today);
-            _sourceKind = OutlookAvailable ? SourceKind.Outlook : SourceKind.Ews;
+            _settingsStore = settings;
+            _otherBusy = otherBusy ?? (() => false);
 
+            // Сохранённое: источник, календарь Outlook, правило личных, период (скользящий — дни назад и вперёд от сегодня).
             // По умолчанию — от месяца назад до трёх месяцев вперёд: недавнее и ближайшее, что видно в календаре.
-            _periodStart = _today().AddMonths(-1);
-            _periodEnd = _today().AddMonths(3);
+            CopySettings saved = settings?.Load() ?? new CopySettings();
+            _sourceKind = OutlookAvailable && saved.FromOutlook ? SourceKind.Outlook : SourceKind.Ews;
+            _savedCalendar = saved.OutlookCalendar;
+            _savedCalendarKey = saved.OutlookCalendarKey;
+            _savedOwner = saved.OutlookOwner;
+            _daysBack = saved.DaysBack;
+            _daysForward = saved.DaysForward;
+            (DateTime first, DateTime last) = saved.Window(_today());
+            _periodStart = first;
+            _periodEnd = last;
+            PrivacyOptions = new[]
+            {
+                new PrivacyOption(PrivateEvents.HideDetails, "только «занято»"),
+                new PrivacyOption(PrivateEvents.CopyAll, "копировать полностью"),
+                new PrivacyOption(PrivateEvents.Skip, "не копировать"),
+            };
+            _privacy = PrivacyOptions.First(o => o.Value == saved.PrivateEvents);
 
-            RefreshOutlookCommand = new AsyncCommand(RefreshOutlookAsync, () => OutlookAvailable && !_isBusy && !_isLoadingOutlook);
+            RefreshOutlookCommand = new AsyncCommand(() => RefreshOutlookAsync(substitute: true), () => OutlookAvailable && !_isBusy && !_isLoadingOutlook);
             FindOutlookCalendarCommand = new AsyncCommand(
                 FindOutlookCalendarAsync, () => OutlookAvailable && !_isBusy && !_isLoadingOutlook && _calendarSearch.Trim().Length > 0);
             PreviewCommand = new AsyncCommand(PreviewAsync, () => CanPreview);
@@ -124,6 +176,202 @@ namespace IwoBridge.Wpf.ViewModels
             SelectNoneCommand = new RelayCommand(() => Select(false), () => HasPreview && !_isBusy);
             SetRecentCommand = new RelayCommand(() => SetPeriod(_today().AddMonths(-1), _today().AddMonths(3)), () => !_isBusy);
             SetThisYearCommand = new RelayCommand(() => SetPeriod(new DateTime(_today().Year, 1, 1), new DateTime(_today().Year, 12, 31)), () => !_isBusy);
+            Auto = new AutoCopyViewModel(timer ?? new InertTimer(), autostart, RunScheduledAsync, SaveSettings, saved.AutoCopy, saved.IntervalMinutes);
+        }
+
+        /// <summary>Автокопирование «раз в N» — расписание; запуск — <see cref="RunScheduledAsync"/>.</summary>
+        public AutoCopyViewModel Auto { get; }
+
+        /// <summary>Варианты для личных (Private) событий источника.</summary>
+        public IReadOnlyList<PrivacyOption> PrivacyOptions { get; }
+
+        public PrivacyOption Privacy
+        {
+            get => _privacy;
+            set
+            {
+                if (value != null && !_isBusy && SetProperty(ref _privacy, value))
+                {
+                    Invalidate();
+                    SaveSettings();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Один автоматический запуск: за скользящий период (те же дни назад и вперёд, что выбраны сейчас, — от текущей
+        /// даты) выполняются рекомендованные действия плана (<see cref="CopyPreview.Recommended"/>) — без вопросов.
+        /// Открытый предпросмотр закрывается: после записи он устарел бы, и его выполнение создало бы дубли.
+        /// Идёт другая операция — пропуск (расписание повторит через минуту).
+        /// </summary>
+        public async Task<AutoRunOutcome> RunScheduledAsync()
+        {
+            // Одна операция за раз на всё окно: идёт копирование, очистка или открыт вопрос («Скопировать?», «Подключение»,
+            // подтверждение удаления) — ждать; иначе календарь изменился бы под открытым вопросом.
+            if (_isBusy || _isLoadingOutlook || _otherBusy() || _dialogs.IsShowingDialog)
+            {
+                return new AutoRunOutcome("пропущено: идёт другая операция", isProblem: false, skipped: true);
+            }
+
+            ITargetSession? target = _target;
+            if (target is null)
+            {
+                return new AutoRunOutcome("приёмник не настроен", isProblem: true);
+            }
+
+            if (_sourceKind == SourceKind.Outlook)
+            {
+                // Список — заново перед каждым запуском: Outlook мог открыться позже программы (запуск с Windows) или
+                // быть перезапущен. Выбранный календарь не подменяется другим: не нашёлся — запуск не выполняется.
+                await RefreshOutlookAsync(substitute: false).ConfigureAwait(true);
+                if (_outlookCalendar is null)
+                {
+                    string name = _savedCalendar ?? _savedOwner ?? "выбранный";
+                    return new AutoRunOutcome(
+                        OutlookError ?? ("календарь «" + name + "» не найден в Outlook — откройте его в Outlook"), isProblem: true);
+                }
+            }
+
+            ISourceCalendar? source = SelectedSource;
+            if (source is null)
+            {
+                return new AutoRunOutcome("источник по EWS не настроен", isProblem: true);
+            }
+
+            string? sameMailbox = SameMailboxError();
+            if (sameMailbox != null)
+            {
+                return new AutoRunOutcome(sameMailbox, isProblem: true, needsAttention: true);
+            }
+
+            // Скользящий период: те же дни назад и вперёд — от сегодняшней даты; поля периода на экране сдвигаются тоже.
+            CopySettings settings = CurrentSettings();
+            (DateTime first, DateTime last) = settings.Window(_today());
+            ShowPeriod(first, last);
+            (DateTime startUtc, DateTime endUtc) = target.TimeZone.PeriodFromLocalDates(first, last);
+            ClearPreview();
+            ClearResult();
+            Begin("Автокопирование: читаю календари…");
+            Task<AutoRunOutcome> work = AutoCoreAsync(target, source, settings, startUtc, endUtc);
+            Operation = work;
+            return await work.ConfigureAwait(true);
+        }
+
+        private async Task<AutoRunOutcome> AutoCoreAsync(ITargetSession target, ISourceCalendar source, CopySettings settings, DateTime startUtc, DateTime endUtc)
+        {
+            string stamp = DateTime.Now.ToString("HH:mm", RussianText.Culture);
+            try
+            {
+                var runner = new CopyRunner(source, target.CopyTarget, target.StopsBatch, settings.PrivateEvents);
+                (CopyPreview _, CopyResult result) = await runner.SyncAsync(startUtc, endUtc, NewProgress(), _cancellation!.Token).ConfigureAwait(true);
+                ShowResult(result, target);
+                ResultTitle = "Автокопирование в " + stamp + ": " + (ResultTitle ?? string.Empty).ToLower(RussianText.Culture);
+                if (result.RefusedReason != null)
+                {
+                    return new AutoRunOutcome("не выполнено — " + result.RefusedReason + " Откройте программу и проверьте план вручную.", isProblem: true);
+                }
+
+                if (result.Fatal != null)
+                {
+                    return new AutoRunOutcome(target.Describe(result.Fatal).Title, isProblem: true, needsAttention: target.NeedsAttention(result.Fatal));
+                }
+
+                string done = result.Done == 0 ? "изменений нет" : DescribeDone(result).TrimEnd('.').ToLower(RussianText.Culture);
+                return result.Failures.Count == 0
+                    ? new AutoRunOutcome(done, isProblem: false)
+                    : new AutoRunOutcome(done + "; не удалось: " + RussianText.Number(result.Failures.Count), isProblem: true);
+            }
+            catch (OperationCanceledException)
+            {
+                return new AutoRunOutcome("остановлено", isProblem: false);
+            }
+#pragma warning disable CA1031 // Ошибка показывается и попадает в уведомление; расписание продолжается.
+            catch (Exception ex)
+#pragma warning restore CA1031
+            {
+                Error = DescribeError(ex, target);
+                return new AutoRunOutcome(Error.Title, isProblem: true, needsAttention: target.NeedsAttention(ex));
+            }
+            finally
+            {
+                End();
+            }
+        }
+
+        /// <summary>Текущие настройки копирования (для сохранения и автокопирования).</summary>
+        /// <remarks>
+        /// Период хранится как дни назад и вперёд от даты, когда человек его выбрал (<see cref="_daysBack"/>), — а не
+        /// пересчитывается из полей дат: иначе «скользящий» период стоял бы на датах дня запуска программы.
+        /// </remarks>
+        internal CopySettings CurrentSettings()
+        {
+            return new CopySettings(
+                _sourceKind == SourceKind.Outlook,
+                _outlookCalendar?.Label ?? _savedCalendar,
+                _privacy.Value,
+                Auto?.IsEnabled ?? false,
+                Auto?.IntervalMinutes ?? 30,
+                _daysBack,
+                _daysForward,
+                _foundShared.Any(f => f.Key == _outlookCalendar?.Key) ? _ownerOfFound : _savedOwner,
+                _outlookCalendar?.Key ?? _savedCalendarKey);
+        }
+
+        /// <summary>Источник и приёмник — один ящик: копия в самого себя (только по EWS; в демонстрации ящик один).</summary>
+        private string? SameMailboxError() =>
+            _sourceKind == SourceKind.Ews && _ewsSource != null && _target != null && !_target.IsDemo
+                && string.Equals(_ewsSource.TargetLabel, _target.TargetLabel, StringComparison.OrdinalIgnoreCase)
+                ? "источник по EWS и приёмник — один и тот же ящик"
+                : null;
+
+        /// <summary>Показать период на экране, не меняя запомненных дней (автокопирование сдвигает его каждый день).</summary>
+        private void ShowPeriod(DateTime first, DateTime last)
+        {
+            _periodStart = first;
+            _periodEnd = last;
+            OnPropertyChanged(nameof(PeriodStart));
+            OnPropertyChanged(nameof(PeriodEnd));
+        }
+
+        private void SaveSettings()
+        {
+            // Пока модель строится (Auto ещё нет), сохранять нечего: значения только что прочитаны.
+            if (_settingsStore is null || Auto is null)
+            {
+                return;
+            }
+
+            try
+            {
+                _settingsStore.Save(CurrentSettings());
+            }
+            catch (Exception ex) when (ex is System.IO.IOException || ex is UnauthorizedAccessException)
+            {
+                // Папка программы только для чтения — настройки не запомнятся, работа продолжается.
+                System.Diagnostics.Trace.TraceWarning("Настройки копирования не сохранены: " + ex.Message);
+            }
+        }
+
+        /// <summary>Таймер, который никогда не срабатывает (модель без расписания — тесты экрана).</summary>
+        private sealed class InertTimer : IOneShotTimer
+        {
+            public event EventHandler? Elapsed
+            {
+                add { }
+                remove { }
+            }
+
+            public void Schedule(TimeSpan due)
+            {
+            }
+
+            public void Cancel()
+            {
+            }
+
+            public void Dispose()
+            {
+            }
         }
 
         public AsyncCommand RefreshOutlookCommand { get; }
@@ -158,6 +406,11 @@ namespace IwoBridge.Wpf.ViewModels
         {
             ThrowIfBusy();
             _target = target;
+            if (target != null)
+            {
+                Auto?.Resume(); // подключение исправили — приостановленное автокопирование продолжается
+            }
+
             Invalidate();
             OnPropertyChanged(nameof(HasTarget));
             OnPropertyChanged(nameof(TargetLabel));
@@ -170,6 +423,10 @@ namespace IwoBridge.Wpf.ViewModels
         {
             ThrowIfBusy();
             _ewsSource = source;
+            if (source != null)
+            {
+                Auto?.Resume();
+            }
             if (_sourceKind == SourceKind.Ews)
             {
                 Invalidate();
@@ -221,6 +478,14 @@ namespace IwoBridge.Wpf.ViewModels
                 {
                     Invalidate();
                     Refresh();
+                    // Пустой список (Outlook закрыт) выбор не стирает: календарь найдётся при следующем «Обновить».
+                    // Тот же календарь после перечитывания списка — не новый выбор: файл не перезаписывается.
+                    if (value != null && value.Key != _savedCalendarKey)
+                    {
+                        _savedCalendar = value.Label;
+                        _savedCalendarKey = value.Key;
+                        SaveSettings();
+                    }
                 }
             }
         }
@@ -258,7 +523,13 @@ namespace IwoBridge.Wpf.ViewModels
             {
                 if (SetProperty(ref _periodStart, value?.Date))
                 {
+                    if (value.HasValue)
+                    {
+                        _daysBack = Days(value.Value.Date, _today().Date);
+                    }
+
                     Invalidate();
+                    SaveSettings();
                 }
             }
         }
@@ -270,10 +541,19 @@ namespace IwoBridge.Wpf.ViewModels
             {
                 if (SetProperty(ref _periodEnd, value?.Date))
                 {
+                    if (value.HasValue)
+                    {
+                        _daysForward = Days(_today().Date, value.Value.Date);
+                    }
+
                     Invalidate();
+                    SaveSettings();
                 }
             }
         }
+
+        /// <summary>Дней от <paramref name="from"/> до <paramref name="to"/>, не меньше нуля и не больше предела настроек.</summary>
+        private static int Days(DateTime from, DateTime to) => (int)Math.Max(0, Math.Min(CopySettings.MaxDays, (to - from).TotalDays));
 
         public string? ValidationError
         {
@@ -302,7 +582,9 @@ namespace IwoBridge.Wpf.ViewModels
         public int UnchangedCount => _preview?.Plan.UnchangedCount ?? 0;
 
         /// <summary>Одной строкой: сколько создастся, перезапишется, удалится и сколько уже совпадает.</summary>
-        public string Summary => _preview is null ? string.Empty : Describe(_preview.Plan);
+        public string Summary => _preview is null ? string.Empty
+            : Describe(_preview.Plan) + (_preview.MatchingOwn.Count == 0 ? string.Empty
+                : ", уже есть у вас " + RussianText.Number(_preview.MatchingOwn.Count) + " (не отмечены)");
 
         public bool NothingToDo => _preview != null && _preview.Plan.IsEmpty;
 
@@ -455,9 +737,11 @@ namespace IwoBridge.Wpf.ViewModels
             OnPropertyChanged(nameof(UseEws));
             Invalidate();
             Refresh();
+            SaveSettings();
         }
 
-        private async Task RefreshOutlookAsync()
+        /// <param name="substitute">Прежний календарь не нашёлся — выбрать другой (по просьбе человека) или оставить пусто.</param>
+        private async Task RefreshOutlookAsync(bool substitute)
         {
             if (_outlook is null)
             {
@@ -471,13 +755,28 @@ namespace IwoBridge.Wpf.ViewModels
                 OutlookError = null;
                 // Найденные по имени общие календари остаются в списке и после «Обновить».
                 IReadOnlyList<SourceChoice> listed = await _outlook.ListAsync().ConfigureAwait(true);
-                SourceChoice[] calendars = listed.Concat(_foundShared.Where(f => listed.All(c => c.Label != f.Label))).ToArray();
+                SourceChoice[] calendars = listed.Concat(_foundShared.Where(f => listed.All(c => c.Key != f.Key))).ToArray();
                 OutlookCalendars = calendars;
 
-                // Выбор: прежний (по названию), иначе открытый сейчас в Outlook, иначе первый.
-                OutlookCalendar = calendars.FirstOrDefault(c => _outlookCalendar != null && c.Label == _outlookCalendar.Label)
-                    ?? calendars.FirstOrDefault(c => c.IsCurrent)
-                    ?? calendars.FirstOrDefault();
+                // Выбор: прежний — по идентификатору папки, затем по подписи (запомнен между запусками); иначе общий
+                // календарь, найденный когда-то по имени владельца, — заново через адресную книгу.
+                SourceChoice? chosen = calendars.FirstOrDefault(c => _savedCalendarKey != null && c.Key == _savedCalendarKey)
+                    ?? calendars.FirstOrDefault(c => c.Label == _savedCalendar);
+                if (chosen is null && _savedOwner != null && _foundShared.Count == 0)
+                {
+                    chosen = await TryFindSharedAsync(_savedOwner).ConfigureAwait(true);
+                    if (chosen != null)
+                    {
+                        calendars = calendars.Concat(new[] { chosen }).ToArray();
+                        OutlookCalendars = calendars;
+                    }
+                }
+
+                // Прежнего нет: человеку (кнопка «Обновить», старт) — открытый сейчас в Outlook, иначе первый. Расписанию —
+                // ничего: молча копировать другой календарь в чужой ящик нельзя.
+                bool firstChoice = _savedCalendarKey is null && _savedCalendar is null && _savedOwner is null;
+                OutlookCalendar = chosen
+                    ?? (substitute || firstChoice ? calendars.FirstOrDefault(c => c.IsCurrent) ?? calendars.FirstOrDefault() : null);
                 if (calendars.Length == 0)
                 {
                     OutlookError = "В Outlook не найдено ни одного календаря.";
@@ -525,9 +824,11 @@ namespace IwoBridge.Wpf.ViewModels
             try
             {
                 SourceChoice found = await _outlook!.FindSharedAsync(text).ConfigureAwait(true);
-                _foundShared.RemoveAll(f => f.Label == found.Label);
+                _foundShared.RemoveAll(f => f.Key == found.Key);
                 _foundShared.Add(found);
-                OutlookCalendars = _outlookCalendars.Where(c => c.Label != found.Label).Concat(new[] { found }).ToArray();
+                _ownerOfFound = text;
+                _savedOwner = text;
+                OutlookCalendars = _outlookCalendars.Where(c => c.Key != found.Key).Concat(new[] { found }).ToArray();
                 OutlookCalendar = found;
             }
 #pragma warning disable CA1031 // Не найден, нет прав, Outlook закрыт — текст под полем, окно рабочее.
@@ -540,6 +841,24 @@ namespace IwoBridge.Wpf.ViewModels
             {
                 _isLoadingOutlook = false;
                 Refresh();
+            }
+        }
+
+        /// <summary>Общий календарь по запомненному имени владельца; не нашёлся — <c>null</c> (выбор по умолчанию).</summary>
+        private async Task<SourceChoice?> TryFindSharedAsync(string owner)
+        {
+            try
+            {
+                SourceChoice found = await _outlook!.FindSharedAsync(owner).ConfigureAwait(true);
+                _foundShared.Add(found);
+                _ownerOfFound = owner;
+                return found;
+            }
+#pragma warning disable CA1031 // Владельца больше нет или нет доступа — выбирается календарь по умолчанию.
+            catch (Exception)
+#pragma warning restore CA1031
+            {
+                return null;
             }
         }
 
@@ -560,10 +879,17 @@ namespace IwoBridge.Wpf.ViewModels
                 return;
             }
 
+            string? sameMailbox = SameMailboxError();
+            if (sameMailbox != null)
+            {
+                ValidationError = char.ToUpper(sameMailbox[0], RussianText.Culture) + sameMailbox.Substring(1) + " — выберите другой источник.";
+                return;
+            }
+
             ClearPreview();
             ClearResult();
             Begin("Читаю календарь-приёмник…");
-            var runner = new CopyRunner(source, target.CopyTarget, target.StopsBatch);
+            var runner = new CopyRunner(source, target.CopyTarget, target.StopsBatch, _privacy.Value);
             try
             {
                 CopyPreview preview = await runner
@@ -609,8 +935,15 @@ namespace IwoBridge.Wpf.ViewModels
                 return;
             }
 
-            if (!_dialogs.Ask("Скопировать?", ConfirmationText(selected, runner.SourceLabel, target.TargetLabel)))
+            if (!_dialogs.Ask("Скопировать?", ConfirmationText(selected, runner.SourceLabel, target.TargetLabel), "Скопировать"))
             {
+                return;
+            }
+
+            // Пока окно было открыто, предпросмотр мог устареть (сменили приёмник, источник): выполнять только свой.
+            if (!ReferenceEquals(_preview, preview) || _isBusy)
+            {
+                ValidationError = "Данные изменились, пока открыт был вопрос, — постройте предпросмотр заново.";
                 return;
             }
 
@@ -757,17 +1090,26 @@ namespace IwoBridge.Wpf.ViewModels
             int update = selected.Count(a => a.Kind == SyncActionKind.Update || a.Kind == SyncActionKind.Recreate);
             int delete = selected.Count(a => a.Kind == SyncActionKind.Delete);
             var text = new StringBuilder();
-            text.Append("Откуда: ").Append(source).Append("\nКуда: ").Append(target).Append("\n\n");
-            text.Append("Создать: ").Append(RussianText.Number(create))
-                .Append("\nПерезаписать: ").Append(RussianText.Number(update))
-                .Append("\nУдалить копий: ").Append(RussianText.Number(delete));
-            if (delete > 0)
+            text.Append("Откуда: ").Append(source).Append("\nКуда: ").Append(target).Append("\n");
+
+            // Только то, что будет сделано: строки с нулём не показываются.
+            if (create > 0)
             {
-                text.Append("\n\nУдаляются только копии, созданные этой программой: их событий больше нет в источнике. "
-                    + "Ваши собственные события приёмника не трогаются. Удалённое лежит в папке «Удалённые».");
+                text.Append("\n• создать ").Append(RussianText.Count(create, "событие", "события", "событий"));
             }
 
-            text.Append("\n\nИсточник не меняется. Участникам ничего не рассылается.");
+            if (update > 0)
+            {
+                text.Append("\n• перезаписать ").Append(RussianText.Count(update, "копию", "копии", "копий"));
+            }
+
+            if (delete > 0)
+            {
+                text.Append("\n• удалить ").Append(RussianText.Count(delete, "копию", "копии", "копий"))
+                    .Append(" — их событий больше нет в источнике (в папку «Удалённые», можно вернуть)");
+            }
+
+            text.Append("\n\nИсточник не меняется, ваши собственные события не трогаются, участникам ничего не рассылается.");
             return text.ToString();
         }
 
@@ -779,7 +1121,17 @@ namespace IwoBridge.Wpf.ViewModels
                 string subject = item?.Subject ?? action.Copy?.Subject ?? "(без темы)";
                 DateTime start = item?.StartUtc ?? action.Copy!.SpanStartUtc;
                 string when = RussianText.Moment(start, zone) + (item?.Recurrence != null || action.Copy?.Kind == Core.Model.ItemKind.RecurringMaster ? " (серия)" : string.Empty);
-                return new CopyRow(action, KindLabel(action.Kind), string.IsNullOrEmpty(subject) ? "(без темы)" : subject, when, ReasonLabel(action.Reason));
+                // Такое же событие человек уже завёл сам — копия по умолчанию не создаётся (иначе дубль), но её можно отметить.
+                bool duplicate = preview.IsDuplicateOfOwn(action);
+                return new CopyRow(
+                    action,
+                    KindLabel(action.Kind),
+                    string.IsNullOrEmpty(subject) ? "(без темы)" : subject,
+                    when,
+                    duplicate ? "У вас уже есть такое же событие" : ReasonLabel(action.Reason))
+                {
+                    IsSelected = !duplicate,
+                };
             }).ToArray();
         }
 

@@ -64,6 +64,12 @@ namespace IwoBridge.Core.Sync
         /// <summary>Все копии моста в календаре — с меткой источника, отпечатком и охватом.</summary>
         Task<IReadOnlyList<BridgeCopy>> ReadCopiesAsync(CancellationToken cancellationToken);
 
+        /// <summary>
+        /// Собственные события приёмника (без метки источника), пересекающие период, и все собственные серии — только
+        /// чтение, чтобы не создать дубль (<see cref="OwnEventMatcher"/>).
+        /// </summary>
+        Task<IReadOnlyList<OwnEvent>> ReadOwnEventsAsync(DateTime windowStartUtc, DateTime windowEndUtc, CancellationToken cancellationToken);
+
         /// <summary>Создать копию события (без приглашений участникам).</summary>
         Task CreateAsync(SourceItem item, IReadOnlyList<AttachmentContent> attachments, CancellationToken cancellationToken);
 

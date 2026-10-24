@@ -75,12 +75,23 @@ Click (Find-ById $root 'CopyPreviewButton')
 Start-Sleep -Seconds 2
 Shot 'copy-2-preview.png'
 Click-Async (Find-ById $root 'CopyButton')
-$box = Find-MessageBox
+Start-Sleep -Seconds 2
+$box = Find-Owned 'ConfirmButton'
 if ($box -ne $null) {
     ShotWindow $box 'copy-3-confirm.png'
-    Click (Find-ById $box '6')   # IDYES
+    Click (Find-ById $box 'ConfirmButton')
     Start-Sleep -Seconds 6
     Shot 'copy-4-result.png'
+}
+
+# --- Help ---
+Click (Find-ById $root 'HelpButton')
+Start-Sleep -Seconds 2
+$help = Find-Owned 'HelpDocument'
+if ($help -ne $null) {
+    ShotWindow $help 'help.png'
+    $help.GetCurrentPattern([System.Windows.Automation.WindowPattern]::Pattern).Close()
+    Start-Sleep -Milliseconds 500
 }
 
 # --- Cleanup ---

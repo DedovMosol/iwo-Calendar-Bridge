@@ -248,6 +248,7 @@ namespace IwoBridge.Wpf.Tests
             target = new TestSession(new InMemoryCalendar(Array.Empty<InMemoryEvent>()));
             var source = new TestSession(new InMemoryCalendar(Array.Empty<InMemoryEvent>()))
             {
+                TargetLabel = CopyViewModelTests.SourceMailbox,
                 SourceCalendar = new InMemorySource("источник", Enumerable.Range(0, count)
                     .Select(i => new SourceItem("s" + i, "Очень длинная тема совещания, которая не помещается в колонку " + i, null, null,
                         start.AddMinutes(i), start.AddMinutes(i + 30)))

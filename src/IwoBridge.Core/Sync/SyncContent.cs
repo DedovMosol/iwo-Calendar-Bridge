@@ -34,11 +34,17 @@ namespace IwoBridge.Core.Sync
     /// <summary>Содержимое вложения для записи в копию.</summary>
     public sealed class AttachmentContent
     {
-        public AttachmentContent(string name, byte[] content)
+        /// <param name="contentId">
+        /// Идентификатор картинки, вставленной в HTML-описание (ссылка <c>cid:</c>); <c>null</c> — обычное вложение.
+        /// </param>
+        public AttachmentContent(string name, byte[] content, string? contentId = null)
         {
             Name = string.IsNullOrWhiteSpace(name) ? "attachment" : name;
             Content = content ?? throw new ArgumentNullException(nameof(content));
+            ContentId = string.IsNullOrEmpty(contentId) ? null : contentId;
         }
+
+        public string? ContentId { get; }
 
         public string Name { get; }
 
@@ -70,8 +76,10 @@ namespace IwoBridge.Core.Sync
             string? recurrence = null,
             IEnumerable<string>? exceptions = null,
             IEnumerable<SyncAttachment>? attachments = null,
-            string? sensitivity = null)
+            string? sensitivity = null,
+            string? richBody = null)
         {
+            RichBody = richBody ?? string.Empty;
             Subject = subject ?? string.Empty;
             Location = location ?? string.Empty;
             Body = NormalizeBody(body);
@@ -121,6 +129,12 @@ namespace IwoBridge.Core.Sync
         public IReadOnlyList<SyncAttachment> Attachments { get; }
 
         /// <summary>
+        /// Отпечаток описания с оформлением (RTF, <see cref="MapiRtf.Fingerprint"/>); пусто — описание только текстом.
+        /// В отпечаток события входит, только если задан: у событий без оформления отпечаток прежний.
+        /// </summary>
+        public string RichBody { get; }
+
+        /// <summary>
         /// Отпечаток: «v1:» + SHA-256 (шестнадцатеричный) канонической записи полей. Каждое поле записывается с
         /// длиной впереди — разные наборы полей не могут дать одну запись («ab»+«c» ≠ «a»+«bc»).
         /// </summary>
@@ -150,6 +164,12 @@ namespace IwoBridge.Core.Sync
                     Field(text, attachment.Name);
                     Field(text, attachment.Length.ToString(CultureInfo.InvariantCulture));
                     Field(text, attachment.ContentSha256);
+                }
+
+                if (RichBody.Length > 0)
+                {
+                    Field(text, "rtf");
+                    Field(text, RichBody);
                 }
 
                 using (var sha = SHA256.Create())

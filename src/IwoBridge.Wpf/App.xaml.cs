@@ -37,6 +37,8 @@ namespace IwoBridge.Wpf
         private Mutex? _singleInstance;
         private IDisposable? _theme;
         private OutlookCalendars? _outlook;
+        private TrayIcon? _tray;
+        private MainViewModel? _main;
 
         protected override void OnStartup(StartupEventArgs e)
         {
@@ -62,16 +64,37 @@ namespace IwoBridge.Wpf
             _theme = Theme.Attach(Resources, Dispatcher);
 
             var dialogs = new WpfDialogService();
-            MainViewModel viewModel = e.Args.Any(a => string.Equals(a, "--demo", StringComparison.OrdinalIgnoreCase))
-                ? new MainViewModel(new DemoSession(DateTime.Today, DemoSession.DemoOffset), dialogs, new DemoSources())
+            bool demo = e.Args.Any(a => string.Equals(a, "--demo", StringComparison.OrdinalIgnoreCase));
+            bool tray = e.Args.Any(a => string.Equals(a, RegistryAutostart.TrayArgument, StringComparison.OrdinalIgnoreCase));
+            MainViewModel viewModel = demo
+                ? new MainViewModel(
+                    new DemoSession(DateTime.Today, DemoSession.DemoOffset),
+                    dialogs,
+                    new DemoSources(),
+                    new CopyServices(new MemoryCopySettingsStore(), new DispatcherOneShotTimer(), autostart: null))
                 : CreateMain(dialogs);
+            _main = viewModel;
 
-            MainWindow = new MainWindow(viewModel, dialogs);
-            MainWindow.Show();
+            var window = new MainWindow(viewModel, dialogs);
+            MainWindow = window;
+            _tray = new TrayIcon(viewModel, window.ShowFromTray, () => window.RequestExit());
+            window.HiddenToTray += (_, __) => _tray.ShowHiddenHint();
+            SessionEnding += (_, __) => window.RequestExit(ask: false);
+
+            // Запуск с Windows (--tray): при включённом автокопировании и настроенном приёмнике окно не показывается —
+            // программа сразу работает из области уведомлений. Иначе окно открывается как обычно.
+            if (tray && viewModel.Copy.Auto.IsEnabled && viewModel.StartHidden())
+            {
+                return;
+            }
+
+            window.Show();
         }
 
         protected override void OnExit(ExitEventArgs e)
         {
+            _tray?.Dispose();
+            _main?.Dispose();
             _theme?.Dispose();
             _outlook?.Dispose();
             if (_singleInstance != null)
@@ -99,7 +122,10 @@ namespace IwoBridge.Wpf
             var source = new AppSettingsStore(Path.Combine(root, "config", "source-connection.json"), credentials, CredentialTargets.EwsSource);
             var connector = new EwsConnector(Path.Combine(root, "manifests"));
             _outlook = new OutlookCalendars();
-            return new MainViewModel(target, connector, dialogs, dialogs, LocalOffset, source, _outlook);
+            var autostart = new RegistryAutostart(System.Reflection.Assembly.GetEntryAssembly()!.Location);
+            autostart.Refresh();
+            var copy = new CopyServices(new FileCopySettingsStore(Path.Combine(root, "config", "copy.json")), new DispatcherOneShotTimer(), autostart);
+            return new MainViewModel(target, connector, dialogs, dialogs, LocalOffset, source, _outlook, copy);
         }
 
         private static TimeSpan LocalOffset()

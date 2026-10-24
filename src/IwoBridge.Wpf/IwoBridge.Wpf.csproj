@@ -39,6 +39,11 @@
   <ItemGroup>
     <Resource Include="app.ico" />
   </ItemGroup>
+  <!-- Значок в области уведомлений (Views\TrayIcon.cs): в WPF своего нет, используется NotifyIcon из .NET Framework. -->
+  <ItemGroup>
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Drawing" />
+  </ItemGroup>
 
   <!-- Тесты моделей представления видят внутренние типы приложения. -->
   <ItemGroup>

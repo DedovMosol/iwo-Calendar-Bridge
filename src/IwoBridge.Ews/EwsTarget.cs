@@ -82,6 +82,7 @@ namespace IwoBridge.Ews
             CopyTarget = new EwsCopyTarget(read, write, calendar, Calendar, calendarZone);
             string mailbox = profile.MailboxAddress ?? credentials.UserName;
             Source = new EwsSource(mailbox + " на " + ServerAddress.ToDisplay(profile.EwsUrl), read, calendar, Calendar);
+            WrittenCopies = new EwsSource("копии", read, calendar, Calendar, includeBridgeCopies: true);
             foreach (Endpoint endpoint in _endpoints)
             {
                 TlsTrustRegistry.Register(endpoint.ConnectionGroup, endpoint.Validator);
@@ -97,8 +98,11 @@ namespace IwoBridge.Ews
         /// <summary>Этот календарь как приёмник копирования: копии моста, создание, перезапись, удаление.</summary>
         public ICopyTarget CopyTarget { get; }
 
-        /// <summary>Этот календарь как источник копирования (только чтение).</summary>
+        /// <summary>Этот календарь как источник копирования (только чтение; копии моста не читаются).</summary>
         public ISourceCalendar Source { get; }
+
+        /// <summary>Всё в календаре вместе с копиями моста — чтобы живые тесты сверили записанное.</summary>
+        internal ISourceCalendar WrittenCopies { get; }
 
         /// <summary>Ошибка всего подключения — копирование на ней останавливается (<see cref="ErrorClassifier.StopsBatch"/>).</summary>
         public static bool StopsBatch(Exception exception) => ErrorClassifier.StopsBatch(Classify(exception));

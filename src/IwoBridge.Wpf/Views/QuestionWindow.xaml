@@ -1,0 +1,38 @@
+<Window x:Class="IwoBridge.Wpf.Views.QuestionWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Style="{StaticResource AppWindow}"
+        Width="520" SizeToContent="Height" ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+    <!-- Вопрос программы в её же стиле (вместо системного окна «Да/Нет»): заголовок, текст и две кнопки, подписанные
+         действием («Скопировать», «Отмена»). Кнопки разнесены: отказ — слева, действие — справа, чтобы не нажать
+         не ту. Enter и Esc — отказ: случайное нажатие ничего не меняет (как в окне подтверждения удаления).
+         На маленьком экране текст прокручивается, кнопки остаются внизу окна. -->
+    <Grid Margin="24,20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <ScrollViewer VerticalScrollBarVisibility="Auto" Focusable="False">
+            <StackPanel>
+                <TextBlock x:Name="Heading" Style="{StaticResource TitleText}" TextWrapping="Wrap"
+                           AutomationProperties.AutomationId="QuestionHeading" />
+                <TextBlock x:Name="Message" Margin="0,12,0,0" TextWrapping="Wrap" LineHeight="21"
+                           AutomationProperties.AutomationId="QuestionText" />
+            </StackPanel>
+        </ScrollViewer>
+
+        <Grid Grid.Row="1" Margin="0,24,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" MinWidth="16" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <Button x:Name="CancelButton" IsCancel="True" IsDefault="True" MinWidth="110"
+                    AutomationProperties.AutomationId="CancelButton" ToolTip="Ничего не делать (Enter или Esc)" />
+            <Button x:Name="ConfirmButton" Grid.Column="2" Style="{StaticResource PrimaryButton}" MinWidth="140"
+                    Click="OnConfirm" AutomationProperties.AutomationId="ConfirmButton" />
+        </Grid>
+    </Grid>
+</Window>

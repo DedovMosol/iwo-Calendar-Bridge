@@ -20,13 +20,20 @@ namespace IwoBridge.Wpf.Views
             return window.ShowDialog() == true;
         }
 
-        public bool Ask(string title, string question)
+        public bool Ask(string title, string question, string confirm, string cancel = "Отмена")
         {
             Window? owner = ActiveWindow();
-            MessageBoxResult answer = owner is null
-                ? MessageBox.Show(question, title, MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No)
-                : MessageBox.Show(owner, question, title, MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
-            return answer == MessageBoxResult.Yes;
+            var window = new QuestionWindow(title, question, confirm, cancel);
+            if (owner != null)
+            {
+                window.Owner = owner;
+            }
+            else
+            {
+                window.WindowStartupLocation = WindowStartupLocation.CenterScreen;
+            }
+
+            return window.ShowDialog() == true;
         }
 
         public void ShowFileInFolder(string path)
@@ -40,6 +47,27 @@ namespace IwoBridge.Wpf.Views
 
             // Проводник с выделенным файлом; путь в кавычках — в нём бывают пробелы.
             Process.Start("explorer.exe", "/select,\"" + path + "\"")?.Dispose();
+        }
+
+        /// <summary>Любое модальное окно потока интерфейса (ShowDialog, системные окна) — признак WPF, без своих счётчиков.</summary>
+        public bool IsShowingDialog => System.Windows.Interop.ComponentDispatcher.IsThreadModal;
+
+        /// <summary>Справка — немодальная, рядом с программой: можно читать и делать по шагам одновременно.</summary>
+        public void ShowHelp()
+        {
+            HelpWindow? open = Application.Current?.Windows.OfType<HelpWindow>().FirstOrDefault();
+            if (open != null)
+            {
+                if (open.WindowState == WindowState.Minimized)
+                {
+                    open.WindowState = WindowState.Normal;
+                }
+
+                open.Activate();
+                return;
+            }
+
+            new HelpWindow { Owner = Application.Current?.MainWindow?.IsVisible == true ? Application.Current.MainWindow : null }.Show();
         }
 
         public bool Show(ConnectionViewModel connection)

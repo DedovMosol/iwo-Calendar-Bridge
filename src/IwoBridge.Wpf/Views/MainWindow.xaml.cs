@@ -17,6 +17,32 @@ namespace IwoBridge.Wpf.Views
     {
         private readonly IDialogService _dialogs;
         private bool _closeAfterStop;
+        private bool _exitRequested;
+        private bool _silentExit;
+
+        /// <summary>Окно закрыли, а автокопирование включено — окно спрятано, программа работает из области уведомлений.</summary>
+        public event EventHandler? HiddenToTray;
+
+        /// <summary>Выйти совсем (меню значка «Выход», завершение сеанса Windows): закрытие не прячет окно.</summary>
+        /// <param name="ask">Спросить, если идёт операция; <c>false</c> — завершение сеанса Windows: остановить молча.</param>
+        public void RequestExit(bool ask = true)
+        {
+            _exitRequested = true;
+            _silentExit = !ask;
+            Close();
+        }
+
+        /// <summary>Показать окно из области уведомлений.</summary>
+        public void ShowFromTray()
+        {
+            Show();
+            if (WindowState == WindowState.Minimized)
+            {
+                WindowState = WindowState.Normal;
+            }
+
+            Activate();
+        }
 
         public MainWindow(MainViewModel viewModel, IDialogService dialogs)
         {
@@ -33,6 +59,27 @@ namespace IwoBridge.Wpf.Views
         {
             CleanupViewModel cleanup = ViewModel.Cleanup;
             CopyViewModel copy = ViewModel.Copy;
+
+            // Автокопирование включено: крестик прячет окно, расписание продолжается (выход — меню значка).
+            if (!_exitRequested && !_closeAfterStop && copy.Auto.IsEnabled && HiddenToTray != null)
+            {
+                e.Cancel = true;
+                Hide();
+                HiddenToTray(this, EventArgs.Empty);
+                return;
+            }
+
+            // Windows завершает сеанс: вопросов не задавать (система ждать не станет) — остановить и выйти. Начатое событие
+            // или пакет не дописаны, но копия без отпечатка перезапишется при следующем запуске, а очистка удаляет по
+            // списку, сохранённому заранее.
+            if (_silentExit)
+            {
+                copy.Stop();
+                cleanup.Stop();
+                base.OnClosing(e);
+                return;
+            }
+
             if ((cleanup.IsBusy || copy.IsBusy) && !_closeAfterStop)
             {
                 e.Cancel = true;
@@ -41,7 +88,7 @@ namespace IwoBridge.Wpf.Views
                     : cleanup.Step == CleanupStep.Deleting
                         ? "Идёт удаление. Остановить его после текущего пакета и закрыть программу?\n\nУже удалённое останется удалённым и перечислено в списке удаляемого."
                         : "Идёт чтение календаря. Прервать его и закрыть программу?";
-                if (_dialogs.Ask("Закрыть программу?", question))
+                if (_dialogs.Ask("Закрыть программу?", question, "Остановить и закрыть", "Продолжить работу"))
                 {
                     _closeAfterStop = true;
                     Task operation = copy.IsBusy ? copy.Operation : cleanup.Operation;

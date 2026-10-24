@@ -37,14 +37,33 @@ namespace IwoBridge.App.Copy
     public sealed class CopyPreview
     {
         internal CopyPreview(
-            DateTime windowStartUtc, DateTime windowEndUtc, SyncPlan plan, IReadOnlyDictionary<string, SourceItem> sourceItems, IReadOnlyList<string> warnings)
+            DateTime windowStartUtc,
+            DateTime windowEndUtc,
+            SyncPlan plan,
+            IReadOnlyDictionary<string, SourceItem> sourceItems,
+            IReadOnlyList<string> warnings,
+            ISet<string> matchingOwn)
         {
             WindowStartUtc = windowStartUtc;
             WindowEndUtc = windowEndUtc;
             Plan = plan;
             SourceItems = sourceItems;
             Warnings = warnings;
+            MatchingOwn = matchingOwn;
+            Recommended = plan.Actions.Where(a => !IsDuplicateOfOwn(a)).ToArray();
         }
+
+        /// <summary>
+        /// События, для которых план создаёт копию, хотя в приёмнике уже есть такое же собственное событие человека
+        /// (<see cref="OwnEventMatcher"/>). По умолчанию такие копии не создаются.
+        /// </summary>
+        public ISet<string> MatchingOwn { get; }
+
+        /// <summary>Действия, выполняемые по умолчанию (и при автокопировании): весь план, кроме дублей своих событий.</summary>
+        public IReadOnlyList<SyncAction> Recommended { get; }
+
+        public bool IsDuplicateOfOwn(SyncAction action) =>
+            action != null && action.Kind == SyncActionKind.Create && MatchingOwn.Contains(action.SourceId);
 
         /// <summary>Замечания чтения источника (<see cref="SourceRead.Warnings"/>) — показываются в предпросмотре.</summary>
         public IReadOnlyList<string> Warnings { get; }
@@ -129,9 +148,13 @@ namespace IwoBridge.App.Copy
         private readonly ICopyTarget _target;
         private readonly Func<Exception, bool> _isFatal;
 
+        private readonly PrivateEvents _privateEvents;
+
         /// <param name="isFatal">Ошибка, после которой продолжать нельзя (по умолчанию — никакая).</param>
-        public CopyRunner(ISourceCalendar source, ICopyTarget target, Func<Exception, bool>? isFatal = null)
+        /// <param name="privateEvents">Что делать с личными событиями источника (<see cref="CopyRules"/>).</param>
+        public CopyRunner(ISourceCalendar source, ICopyTarget target, Func<Exception, bool>? isFatal = null, PrivateEvents privateEvents = PrivateEvents.HideDetails)
         {
+            _privateEvents = privateEvents;
             _source = source ?? throw new ArgumentNullException(nameof(source));
             _target = target ?? throw new ArgumentNullException(nameof(target));
             _isFatal = isFatal ?? (_ => false);
@@ -167,7 +190,7 @@ namespace IwoBridge.App.Copy
             SourceRead read = await _source.ReadAsync(start, end, referenced, counter, cancellationToken).ConfigureAwait(false);
 
             // Повторяющийся идентификатор планировщик сам перечислит в конфликтах; в словарь идёт первое событие.
-            SourceItem[] prepared = read.Items.Select(CopyRules.Prepare).ToArray();
+            SourceItem[] prepared = read.Items.Select(i => CopyRules.Prepare(i, _privateEvents)).Where(i => i != null).ToArray()!;
             var items = new Dictionary<string, SourceItem>(StringComparer.Ordinal);
             foreach (SourceItem item in prepared)
             {
@@ -179,7 +202,26 @@ namespace IwoBridge.App.Copy
 
             var snapshot = new SourceSnapshot(prepared.Select(i => i.ToEvent()), read.IsComplete, read.IncompleteReason);
             SyncPlan plan = SyncPlanner.Plan(start, end, snapshot, copies, new SyncOptions(allowMassDelete: allowMassDelete));
-            return new CopyPreview(start, end, plan, items, read.Warnings);
+
+            // Собственные события приёмника читаются, только если есть что создавать: дубль возможен лишь у новой копии.
+            SourceItem[] creates = plan.Actions.Where(a => a.Kind == SyncActionKind.Create).Select(a => items[a.SourceId]).ToArray();
+            ISet<string> matchingOwn = creates.Length == 0
+                ? new HashSet<string>(StringComparer.Ordinal)
+                : OwnEventMatcher.Duplicates(creates, await _target.ReadOwnEventsAsync(start, end, cancellationToken).ConfigureAwait(false));
+            return new CopyPreview(start, end, plan, items, read.Warnings, matchingOwn);
+        }
+
+        /// <summary>
+        /// Автокопирование: предпросмотр и выполнение рекомендованных действий (<see cref="CopyPreview.Recommended"/>) без
+        /// участия человека. Подозрение на массовое удаление не выполняется (итог <see cref="CopyResult.RefusedReason"/>) —
+        /// его разбирает человек в обычном предпросмотре; по неполному чтению источника копии не удаляются (планировщик).
+        /// </summary>
+        public async Task<(CopyPreview Preview, CopyResult Result)> SyncAsync(
+            DateTime windowStartUtc, DateTime windowEndUtc, IProgress<CopyProgress>? progress, CancellationToken cancellationToken)
+        {
+            CopyPreview preview = await PreviewAsync(windowStartUtc, windowEndUtc, false, progress, cancellationToken).ConfigureAwait(false);
+            CopyResult result = await RunAsync(preview, preview.Recommended, progress, cancellationToken).ConfigureAwait(false);
+            return (preview, result);
         }
 
         /// <summary>

@@ -154,6 +154,21 @@ namespace IwoBridge.InMemory
             }
         }
 
+        /// <summary>Собственные события приёмника (созданные человеком) — их программа не трогает.</summary>
+        public List<OwnEvent> Own { get; } = new List<OwnEvent>();
+
+        public Task<IReadOnlyList<OwnEvent>> ReadOwnEventsAsync(DateTime windowStartUtc, DateTime windowEndUtc, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            lock (_sync)
+            {
+                IReadOnlyList<OwnEvent> list = Own
+                    .Where(o => o.Kind == Core.Model.ItemKind.RecurringMaster || TimeWindow.Overlaps(o.StartUtc, o.EndUtc, windowStartUtc, windowEndUtc))
+                    .ToArray();
+                return Task.FromResult(list);
+            }
+        }
+
         public Task CreateAsync(SourceItem item, IReadOnlyList<AttachmentContent> attachments, CancellationToken cancellationToken)
         {
             ThrowIfFails(item);

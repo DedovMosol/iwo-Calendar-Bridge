@@ -27,19 +27,25 @@ namespace IwoBridge.Ews
         private const int PageSize = 500;
         private const int BindBatch = 50;
 
+        private static readonly SearchFilter NotBridgeCopy = new SearchFilter.Not(new SearchFilter.Exists(BridgeExtendedProperties.SourceId));
+
         private readonly EwsChannel _channel;
         private readonly FolderId _calendar;
         private readonly EwsCalendarGateway _gateway;
         private readonly object _sync = new object();
         private Dictionary<string, string> _itemIdBySource = new Dictionary<string, string>(StringComparer.Ordinal);
 
-        internal EwsSource(string label, EwsChannel channel, FolderId calendar, EwsCalendarGateway gateway)
+        /// <param name="includeBridgeCopies">Читать и копии моста — только для проверки записанного (живые тесты).</param>
+        internal EwsSource(string label, EwsChannel channel, FolderId calendar, EwsCalendarGateway gateway, bool includeBridgeCopies = false)
         {
             Label = label;
             _channel = channel;
             _calendar = calendar;
             _gateway = gateway;
+            _filter = includeBridgeCopies ? null : NotBridgeCopy;
         }
+
+        private readonly SearchFilter? _filter;
 
         public string Label { get; }
 
@@ -129,7 +135,7 @@ namespace IwoBridge.Ews
                     foreach (FileAttachment file in source.Attachments.OfType<FileAttachment>())
                     {
                         file.Load();
-                        list.Add(new AttachmentContent(file.Name, file.Content));
+                        list.Add(new AttachmentContent(file.Name, file.Content, file.ContentId));
                     }
 
                     return list;
@@ -148,8 +154,10 @@ namespace IwoBridge.Ews
                         BasePropertySet.IdOnly, AppointmentSchema.Start, AppointmentSchema.End, AppointmentSchema.AppointmentType, AppointmentSchema.ICalUid),
                 };
                 view.OrderBy.Add(ItemSchema.DateTimeCreated, SortDirection.Ascending);
+                // Копии, сделанные этой программой (источник сам чей-то приёмник), не читаются: при встречной настройке
+                // иначе копировались бы копии копий.
                 FindItemsResults<Item> page = await _channel
-                    .RunAsync(service => service.FindItems(_calendar, view), cancellationToken)
+                    .RunAsync(service => _filter is null ? service.FindItems(_calendar, view) : service.FindItems(_calendar, _filter, view), cancellationToken)
                     .ConfigureAwait(false);
                 foreach (Appointment a in page.Items.OfType<Appointment>())
                 {
@@ -184,7 +192,8 @@ namespace IwoBridge.Ews
                 AppointmentSchema.LegacyFreeBusyStatus,
                 AppointmentSchema.Recurrence,
                 AppointmentSchema.ModifiedOccurrences,
-                AppointmentSchema.DeletedOccurrences)
+                AppointmentSchema.DeletedOccurrences,
+                MapiProperties.RtfCompressed)
             {
                 RequestedBodyType = BodyType.Text,
             };
@@ -278,7 +287,8 @@ namespace IwoBridge.Ews
                 rule,
                 seriesEnd,
                 exceptions,
-                attachments);
+                attachments,
+                a.TryGetProperty(MapiProperties.RtfCompressed, out byte[] rtf) ? rtf : null);
         }
 
         private sealed class Brief

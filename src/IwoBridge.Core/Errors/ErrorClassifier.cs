@@ -61,6 +61,27 @@ namespace IwoBridge.Core.Errors
         /// на ней останавливается сразу, а не перебирает остальные — повтор неверного входа ещё и приблизил бы блокировку
         /// учётной записи (T3). Временные ошибки сюда попадают уже после всех повторов.
         /// </summary>
+        /// <summary>
+        /// Ошибка, которую само время не исправит: неверный вход, нет прав, нет ящика или адреса, чужой сертификат, TLS.
+        /// Автоматические повторы по расписанию на ней приостанавливаются до правки подключения — повтор неверного входа
+        /// каждые N минут заблокировал бы учётную запись (T3). Сеть и «сервер занят» сюда не относятся: пройдут сами.
+        /// </summary>
+        public static bool NeedsAttention(OperationErrorKind kind)
+        {
+            switch (kind)
+            {
+                case OperationErrorKind.AuthenticationFailed:
+                case OperationErrorKind.AccessDenied:
+                case OperationErrorKind.MailboxNotFound:
+                case OperationErrorKind.EndpointNotFound:
+                case OperationErrorKind.CertificatePinMismatch:
+                case OperationErrorKind.TlsNegotiationFailed:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
         public static bool StopsBatch(OperationErrorKind kind)
         {
             switch (kind)

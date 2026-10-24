@@ -107,26 +107,35 @@ namespace IwoBridge.Ews.Tests
                     new SourceException(seriesStart.AddDays(14), false, seriesStart.AddDays(14).AddHours(1), seriesStart.AddDays(14).AddHours(2), subjectOfThird),
                 });
 
+            // Описание с оформлением — RTF, как его отдаёт Outlook (MapiRtf).
+            // Кодировка шрифта — \fcharset204 (кириллица), как у Outlook: без неё байты читаются как западноевропейские.
+            byte[] rtfDocument = Encoding.ASCII.GetBytes(@"{\rtf1\ansi\ansicpg1251\deff0{\fonttbl{\f0\fswiss\fcharset204 Arial;}}\f0\fs20 \b\'e6\'e8\'f0\'ed\'fb\'e9 \'f2\'e5\'ea\'f1\'f2\b0\par}");
+            var rich = new SourceItem("live-rich", "Live: оформление", null, "жирный текст", At(3, 6), At(3, 7), rtfCompressed: MapiRtf.FromRtf(rtfDocument));
+
             var source = new InMemorySource("живой источник", Array.Empty<SourceItem>());
             source.Put(single, new[] { new AttachmentContent("заметка.txt", file) });
             source.Put(allDay);
             source.Put(secret);
             source.Put(Series("Live: перенесённое"));
+            source.Put(rich);
 
             var runner = new CopyRunner(source, target.CopyTarget, EwsTarget.StopsBatch);
             DateTime from = day.AddDays(-1), to = day.AddDays(40);
 
             // 1. Первое копирование: всё создаётся.
-            await Apply(runner, from, to, ct, expectCreate: 4);
+            await Apply(runner, from, to, ct, expectCreate: 5);
 
             // 2. Повтор без изменений: делать нечего (отпечаток, записанный в копию, совпадает с источником).
             CopyPreview again = await runner.PreviewAsync(from, to, false, null, ct);
             Assert.True(again.Plan.IsEmpty, Describe(again.Plan));
-            Assert.Equal(4, again.Plan.UnchangedCount);
+            Assert.Equal(5, again.Plan.UnchangedCount);
 
             // 3. Что записано — читаем папку тем же адаптером, что и источник по EWS.
-            SourceRead written = await target.Source.ReadAsync(from, to, Array.Empty<string>(), null, ct);
+            SourceRead written = await target.WrittenCopies.ReadAsync(from, to, Array.Empty<string>(), null, ct);
             Assert.Null(written.IncompleteReason);
+
+            // Копии моста не видны как источник: при встречной настройке копии копий не появятся.
+            Assert.Empty((await target.Source.ReadAsync(from, to, Array.Empty<string>(), null, ct)).Items);
             foreach (SourceItem item in written.Items.OrderBy(i => i.StartUtc))
             {
                 _output.WriteLine($"{item.Subject} | {item.StartUtc:u} – {item.EndUtc:u} | весь день: {item.IsAllDay} | {item.Busy} | {item.Sensitivity} | "
@@ -139,7 +148,12 @@ namespace IwoBridge.Ews.Tests
             Assert.Equal("Зал 1", gotSingle.Location);
             Assert.Contains("Описание события", gotSingle.Body);
             Assert.Equal("заметка.txt", gotSingle.Attachments.Single().Name);
-            IReadOnlyList<AttachmentContent> gotFile = await target.Source.LoadAttachmentsAsync(gotSingle, ct);
+            IReadOnlyList<AttachmentContent> gotFile = await target.WrittenCopies.LoadAttachmentsAsync(gotSingle, ct);
+
+            // Описание с оформлением: RTF записан и читается, текст из него Exchange построил сам.
+            SourceItem gotRich = written.Items.Single(i => i.Subject == rich.Subject);
+            Assert.NotNull(gotRich.RtfCompressed);
+            Assert.Contains("жирный текст", gotRich.Body);
             Assert.Equal(file, gotFile.Single().Content);
 
             SourceItem gotAllDay = written.Items.Single(i => i.Subject == allDay.Subject);
@@ -172,9 +186,9 @@ namespace IwoBridge.Ews.Tests
 
             CopyPreview last = await runner.PreviewAsync(from, to, false, null, ct);
             Assert.True(last.Plan.IsEmpty, Describe(last.Plan));
-            SourceRead final = await target.Source.ReadAsync(from, to, Array.Empty<string>(), null, ct);
+            SourceRead final = await target.WrittenCopies.ReadAsync(from, to, Array.Empty<string>(), null, ct);
             Assert.Equal(
-                new[] { "Live: весь день", "Live: одиночное (изменено)", "Live: серия" },
+                new[] { "Live: весь день", "Live: одиночное (изменено)", "Live: оформление", "Live: серия" },
                 final.Items.Select(i => i.Subject).OrderBy(s => s, StringComparer.Ordinal));
             Assert.Contains(final.Items.Single(i => i.Subject == "Live: серия").Exceptions, e => e.Subject == "Live: перенесённое ещё раз");
         }

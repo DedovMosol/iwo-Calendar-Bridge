@@ -28,11 +28,9 @@ namespace IwoBridge.Outlook.Tests
         {
             using (var session = new OutlookSession())
             {
+                // Только числа: названия календарей и темы событий — служебные данные, в вывод тестов они не попадают.
                 IReadOnlyList<OutlookCalendarRef> calendars = await session.ListCalendarsAsync();
-                foreach (OutlookCalendarRef c in calendars)
-                {
-                    _output.WriteLine((c.IsCurrent ? "* " : "  ") + c.Label);
-                }
+                _output.WriteLine("Календарей в Outlook: " + calendars.Count + ", открыт сейчас: " + calendars.Count(c => c.IsCurrent));
 
                 OutlookCalendarRef current = calendars.Single(c => c.IsCurrent);
                 await ReadTwice(session.Open(current));
@@ -51,7 +49,7 @@ namespace IwoBridge.Outlook.Tests
             using (var session = new OutlookSession())
             {
                 OutlookCalendarRef found = await session.FindSharedAsync(owner!);
-                _output.WriteLine("Найден: " + found.Label);
+                _output.WriteLine("Общий календарь найден.");
                 await ReadTwice(session.Open(found));
             }
         }
@@ -64,20 +62,13 @@ namespace IwoBridge.Outlook.Tests
             SourceRead read = await WithLimit(source.ReadAsync(from, to, Array.Empty<string>(), null, CancellationToken.None));
             IReadOnlyList<SourceItem> items = read.Items;
             _output.WriteLine(
-                $"{source.Label}: событий {items.Count}, серий {items.Count(i => i.Recurrence != null)}, исключений {items.Sum(i => i.Exceptions.Count)}, "
+                $"событий {items.Count}, серий {items.Count(i => i.Recurrence != null)}, исключений {items.Sum(i => i.Exceptions.Count)}, "
                 + $"весь день {items.Count(i => i.IsAllDay)}, личных {items.Count(i => i.Sensitivity == ItemSensitivity.Private)}, "
-                + $"с вложениями {items.Count(i => i.Attachments.Count > 0)}; неполное: {read.IncompleteReason ?? "нет"}; {watch.Elapsed.TotalSeconds:0.0} с");
-            foreach (string warning in read.Warnings)
-            {
-                _output.WriteLine("  замечание: " + warning);
-            }
+                + $"с вложениями {items.Count(i => i.Attachments.Count > 0)}, с оформлением {items.Count(i => i.RtfCompressed != null)}, "
+                + $"замечаний {read.Warnings.Count}; неполное: {(read.IncompleteReason is null ? "нет" : "да")}; {watch.Elapsed.TotalSeconds:0.0} с");
 
-            foreach (SourceItem i in items.OrderBy(i => i.StartUtc).Take(5))
-            {
-                _output.WriteLine($"  {i.StartUtc.ToLocalTime():dd.MM.yyyy HH:mm}–{i.EndUtc.ToLocalTime():HH:mm} {i.Subject}{(i.Recurrence != null ? " (серия " + i.Recurrence.Canonical + ")" : string.Empty)}");
-            }
-
-            Assert.Null(read.IncompleteReason);
+            // Причина неполного чтения содержит тему события — в сообщение проверки не попадает.
+            Assert.True(read.IncompleteReason is null, "чтение неполное");
             Assert.All(items, i => Assert.False(string.IsNullOrEmpty(i.SourceId)));
             Assert.All(items, i => Assert.True(i.EndUtc >= i.StartUtc));
             Assert.Equal(items.Count, items.Select(i => i.SourceId).Distinct(StringComparer.Ordinal).Count());

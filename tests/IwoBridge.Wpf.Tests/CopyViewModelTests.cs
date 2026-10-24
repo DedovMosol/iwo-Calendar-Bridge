@@ -19,6 +19,8 @@ namespace IwoBridge.Wpf.Tests
     /// </summary>
     public sealed class CopyViewModelTests
     {
+        internal const string SourceMailbox = "source@example.test на mail.example.test";
+
         private static DateTime Utc(int day, int hour) => new DateTime(2026, 1, day, hour, 0, 0, DateTimeKind.Utc);
 
         private static SourceItem Item(string id, int day, string subject = "Встреча") =>
@@ -32,6 +34,7 @@ namespace IwoBridge.Wpf.Tests
             var source = new TestSession(new InMemoryCalendar(Array.Empty<InMemoryEvent>()))
             {
                 SourceCalendar = new InMemorySource("источник по EWS", ewsItems),
+                TargetLabel = SourceMailbox,
             };
             var vm = new CopyViewModel(dialogs, outlook, () => new DateTime(2026, 1, 20));
             vm.SetTarget(target);
@@ -69,7 +72,9 @@ namespace IwoBridge.Wpf.Tests
             await vm.CopyCommand.ExecuteAsync();
 
             Assert.Equal(new[] { "A", "C" }, target.Copies.Copies.Select(c => c.Item.Subject).OrderBy(s => s));
-            Assert.Contains("Создать: 2", dialogs.Questions.Single());
+            string question = dialogs.Questions.Single();
+            Assert.Contains("создать 2 события", question);
+            Assert.DoesNotContain("перезаписать", question); // нулевые действия не перечисляются
             Assert.Equal("Готово", vm.ResultTitle);
             Assert.True(vm.ResultIsSuccess);
             Assert.False(vm.HasPreview); // предпросмотр израсходован
@@ -124,6 +129,7 @@ namespace IwoBridge.Wpf.Tests
             var source = new TestSession(new InMemoryCalendar(Array.Empty<InMemoryEvent>()))
             {
                 SourceCalendar = new InMemorySource("источник", new[] { Item("a", 10, "Новая тема") }),
+                TargetLabel = SourceMailbox,
             };
             vm.SetEwsSource(source);
 
@@ -419,7 +425,7 @@ namespace IwoBridge.Wpf.Tests
 
             public ISourceCalendar Source { get; }
 
-            public string TargetLabel => _inner.TargetLabel;
+            public string TargetLabel => SourceMailbox;
 
             public string ConfirmationPhrase => _inner.ConfirmationPhrase;
 
@@ -433,6 +439,8 @@ namespace IwoBridge.Wpf.Tests
 
             public bool StopsBatch(Exception exception) => false;
 
+            public bool NeedsAttention(Exception exception) => false;
+
             public IwoBridge.Wpf.Messages.UserMessage Describe(Exception exception) => _inner.Describe(exception);
 
             public void Dispose()
@@ -444,11 +452,13 @@ namespace IwoBridge.Wpf.Tests
     /// <summary>Календари «Outlook» для тестов: заданный список или ошибка (Outlook не открыт).</summary>
     internal sealed class FakeOutlook : IOutlookCalendars
     {
-        private readonly SourceChoice[] _choices;
+        public FakeOutlook(params SourceChoice[] choices) => Choices = choices;
 
-        public FakeOutlook(params SourceChoice[] choices) => _choices = choices;
+        /// <summary>Что Outlook «показывает» сейчас (можно сменить — Outlook открыли, закрыли).</summary>
+        public SourceChoice[] Choices { get; set; }
 
         public bool Installed { get; set; } = true;
+
 
         public Exception? Failure { get; set; }
 
@@ -461,7 +471,7 @@ namespace IwoBridge.Wpf.Tests
                 return Task.FromException<IReadOnlyList<SourceChoice>>(Failure);
             }
 
-            return Task.FromResult<IReadOnlyList<SourceChoice>>(_choices);
+            return Task.FromResult<IReadOnlyList<SourceChoice>>(Choices);
         }
 
         /// <summary>Общие календари «адресной книги»: имя → календарь; кого нет — ошибка «не найден».</summary>

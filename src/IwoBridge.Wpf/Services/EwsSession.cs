@@ -66,6 +66,8 @@ namespace IwoBridge.Wpf.Services
 
         public bool StopsBatch(Exception exception) => EwsTarget.StopsBatch(exception);
 
+        public bool NeedsAttention(Exception exception) => Core.Errors.ErrorClassifier.NeedsAttention(EwsTarget.Classify(exception));
+
         public UserMessage Describe(Exception exception)
         {
             return exception is null

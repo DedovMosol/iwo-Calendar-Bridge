@@ -111,7 +111,8 @@ namespace IwoBridge.Core.Sync
             RecurrenceRule? recurrence = null,
             DateTime? seriesEndUtc = null,
             IEnumerable<SourceException>? exceptions = null,
-            IEnumerable<SyncAttachment>? attachments = null)
+            IEnumerable<SyncAttachment>? attachments = null,
+            byte[]? rtfCompressed = null)
         {
             if (string.IsNullOrEmpty(sourceId))
             {
@@ -136,9 +137,19 @@ namespace IwoBridge.Core.Sync
             SeriesEndUtc = recurrence is null ? null : seriesEndUtc.HasValue ? TimeMapper.ToUtc(seriesEndUtc.Value) : (DateTime?)null;
             Exceptions = recurrence is null ? Array.Empty<SourceException>() : (exceptions ?? Array.Empty<SourceException>()).ToArray();
             Attachments = (attachments ?? Array.Empty<SyncAttachment>()).ToArray();
+            RtfCompressed = rtfCompressed is null || rtfCompressed.Length == 0 ? null : rtfCompressed;
         }
 
         public string SourceId { get; }
+
+        /// <summary>
+        /// Описание с оформлением и картинками — в формате свойства MAPI <c>PR_RTF_COMPRESSED</c> (<see cref="MapiRtf"/>);
+        /// <c>null</c> — только текст <see cref="Body"/>. Копия получает именно его: так переносятся шрифты, таблицы и
+        /// вставленные в описание картинки (в календарях Outlook описание хранится в RTF).
+        /// </summary>
+#pragma warning disable CA1819 // Байты свойства MAPI передаются как есть, без копирования (могут быть сотни КБ).
+        public byte[]? RtfCompressed { get; }
+#pragma warning restore CA1819
 
         public string Subject { get; }
 
@@ -183,16 +194,18 @@ namespace IwoBridge.Core.Sync
             Recurrence?.Canonical,
             Exceptions.Select(e => e.Canonical),
             Attachments,
-            Sensitivity.ToString()).Hash;
+            Sensitivity.ToString(),
+            RtfCompressed is null ? null : MapiRtf.Fingerprint(RtfCompressed)).Hash;
 
         /// <summary>Описание для планировщика синхронизации.</summary>
         public SourceEvent ToEvent() => new SourceEvent(SourceId, Kind, StartUtc, SpanEndUtc, ContentHash, Subject);
 
         /// <summary>Копия события с другим содержимым (для правил переноса, например скрытия личного).</summary>
-        internal SourceItem With(string subject, string location, string body, IEnumerable<SourceException> exceptions, IEnumerable<SyncAttachment> attachments)
+        internal SourceItem WithoutDetails(string subject, IEnumerable<SourceException> exceptions)
         {
             return new SourceItem(
-                SourceId, subject, location, body, StartUtc, EndUtc, IsAllDay, Busy, Sensitivity, Recurrence, SeriesEndUtc, exceptions, attachments);
+                SourceId, subject, string.Empty, string.Empty, StartUtc, EndUtc, IsAllDay, Busy, Sensitivity, Recurrence, SeriesEndUtc, exceptions,
+                Array.Empty<SyncAttachment>(), rtfCompressed: null);
         }
     }
 
@@ -205,26 +218,52 @@ namespace IwoBridge.Core.Sync
         /// <summary>Тема копии личного события.</summary>
         public const string PrivateSubject = "Личное";
 
+        /// <summary>Личное событие по правилу по умолчанию — <see cref="PrivateEvents.HideDetails"/>.</summary>
+        public static SourceItem Prepare(SourceItem item) => Prepare(item, PrivateEvents.HideDetails)!;
+
         /// <summary>
-        /// Личное (Private) событие: в копии только время и занятость — без темы, места, описания и вложений
-        /// (PLAN.md §6.3). Коллеги домена-приёмника увидят «занято», содержимое не покидает источник.
+        /// Событие для копии по правилу для личных (Private) событий; <c>null</c> — не копировать. По умолчанию в копии
+        /// личного только время и занятость — без темы, места, описания и вложений (PLAN.md §6.3): коллеги
+        /// домена-приёмника увидят «занято», содержимое не покидает источник.
         /// </summary>
-        public static SourceItem Prepare(SourceItem item)
+        public static SourceItem? Prepare(SourceItem item, PrivateEvents privateEvents)
         {
             if (item is null)
             {
                 throw new ArgumentNullException(nameof(item));
             }
 
-            if (item.Sensitivity != ItemSensitivity.Private)
+            // «Конфиденциальное» — строже «личного»: правило то же (содержимое не уходит в чужой домен без решения человека).
+            if (item.Sensitivity != ItemSensitivity.Private && item.Sensitivity != ItemSensitivity.Confidential)
             {
                 return item;
             }
 
-            IEnumerable<SourceException> exceptions = item.Exceptions.Select(e => e.IsDeleted
-                ? e
-                : new SourceException(e.OriginalStartUtc, false, e.StartUtc, e.EndUtc));
-            return item.With(PrivateSubject, string.Empty, string.Empty, exceptions, Array.Empty<SyncAttachment>());
+            switch (privateEvents)
+            {
+                case PrivateEvents.CopyAll:
+                    return item;
+                case PrivateEvents.Skip:
+                    return null;
+                default:
+                    IEnumerable<SourceException> exceptions = item.Exceptions.Select(e => e.IsDeleted
+                        ? e
+                        : new SourceException(e.OriginalStartUtc, false, e.StartUtc, e.EndUtc));
+                    return item.WithoutDetails(PrivateSubject, exceptions);
+            }
         }
+    }
+
+    /// <summary>Что делать с личными (Private) событиями источника.</summary>
+    public enum PrivateEvents
+    {
+        /// <summary>Копировать время и занятость, тему — «Личное»; без места, описания и вложений.</summary>
+        HideDetails,
+
+        /// <summary>Копировать полностью (копия тоже личная: в общем доступе коллеги видят только «занято»).</summary>
+        CopyAll,
+
+        /// <summary>Не копировать; уже сделанные копии удаляются, как события, которых больше нет.</summary>
+        Skip,
     }
 }

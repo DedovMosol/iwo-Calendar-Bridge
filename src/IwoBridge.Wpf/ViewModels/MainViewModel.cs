@@ -20,6 +20,23 @@ namespace IwoBridge.Wpf.ViewModels
         Cleanup,
     }
 
+    /// <summary>Службы вкладки копирования: настройки между запусками, таймер автокопирования, автозапуск с Windows.</summary>
+    public sealed class CopyServices
+    {
+        public CopyServices(ICopySettingsStore settings, IOneShotTimer timer, IAutostart? autostart)
+        {
+            Settings = settings ?? throw new ArgumentNullException(nameof(settings));
+            Timer = timer ?? throw new ArgumentNullException(nameof(timer));
+            Autostart = autostart;
+        }
+
+        public ICopySettingsStore Settings { get; }
+
+        public IOneShotTimer Timer { get; }
+
+        public IAutostart? Autostart { get; }
+    }
+
     /// <summary>Ящик, который можно очистить (приёмник или источник по EWS).</summary>
     public sealed class CleanupChoice
     {
@@ -43,7 +60,7 @@ namespace IwoBridge.Wpf.ViewModels
     /// При запуске читаются сохранённые настройки: нет приёмника — сразу окно «Приёмник»; источник по EWS просто
     /// подключается, если настроен. Сеть при этом не трогается. Во время операции подключения и операция не меняются.
     /// </summary>
-    public sealed class MainViewModel : ObservableObject
+    public sealed class MainViewModel : ObservableObject, IDisposable
     {
         private readonly ISettingsStore? _settings;
         private readonly ISettingsStore? _sourceSettings;
@@ -58,6 +75,7 @@ namespace IwoBridge.Wpf.ViewModels
         private IReadOnlyList<CleanupChoice> _cleanupChoices = Array.Empty<CleanupChoice>();
         private CleanupChoice? _cleanupChoice;
         private bool _started;
+        private RelayCommand? _helpCommand;
 
         /// <summary>Обычный режим: настройки, подключение по EWS.</summary>
         /// <param name="sourceSettings">Настройки подключения «Источник по EWS»; <c>null</c> — такого подключения нет.</param>
@@ -69,7 +87,8 @@ namespace IwoBridge.Wpf.ViewModels
             IConnectionDialog connectionDialog,
             Func<TimeSpan> localOffset,
             ISettingsStore? sourceSettings = null,
-            IOutlookCalendars? outlook = null)
+            IOutlookCalendars? outlook = null,
+            CopyServices? copyServices = null)
         {
             _settings = settings ?? throw new ArgumentNullException(nameof(settings));
             _connector = connector ?? throw new ArgumentNullException(nameof(connector));
@@ -78,7 +97,7 @@ namespace IwoBridge.Wpf.ViewModels
             _localOffset = localOffset ?? throw new ArgumentNullException(nameof(localOffset));
             _sourceSettings = sourceSettings;
             Cleanup = new CleanupViewModel(dialogs);
-            Copy = new CopyViewModel(dialogs, outlook);
+            Copy = NewCopy(dialogs, outlook, copyServices);
             EditConnectionCommand = new RelayCommand(EditTarget, () => !IsBusy);
             EditSourceCommand = new RelayCommand(EditSource, () => !IsBusy && _sourceSettings != null);
             (PreviewCommand, StopCommand) = CurrentCommands();
@@ -86,12 +105,12 @@ namespace IwoBridge.Wpf.ViewModels
         }
 
         /// <summary>Демонстрационный режим: готовый сеанс (он же приёмник и источник по EWS), без настроек и сети.</summary>
-        public MainViewModel(ITargetSession demoSession, IDialogService dialogs, IOutlookCalendars? outlook = null)
+        public MainViewModel(ITargetSession demoSession, IDialogService dialogs, IOutlookCalendars? outlook = null, CopyServices? copyServices = null)
         {
             _dialogs = dialogs ?? throw new ArgumentNullException(nameof(dialogs));
             _localOffset = () => TimeSpan.Zero; // окна «Подключение» в демонстрационном режиме нет
             Cleanup = new CleanupViewModel(dialogs);
-            Copy = new CopyViewModel(dialogs, outlook);
+            Copy = NewCopy(dialogs, outlook, copyServices);
             EditConnectionCommand = new RelayCommand(() => { }, () => false);
             EditSourceCommand = new RelayCommand(() => { }, () => false);
             (PreviewCommand, StopCommand) = CurrentCommands();
@@ -99,6 +118,21 @@ namespace IwoBridge.Wpf.ViewModels
             ApplyTarget(demoSession ?? throw new ArgumentNullException(nameof(demoSession)));
             LoadOutlookCalendars();
         }
+
+        /// <summary>Расписание и сеансы освобождаются при выходе: таймер не держит модель, соединения закрыты.</summary>
+        public void Dispose()
+        {
+            Copy.Auto.Dispose();
+            _session?.Dispose();
+            _sourceSession?.Dispose();
+        }
+
+        // Автокопирование ждёт и очистку: одна операция с ящиками за раз на всё окно.
+        private CopyViewModel NewCopy(IDialogService dialogs, IOutlookCalendars? outlook, CopyServices? services) =>
+            new CopyViewModel(dialogs, outlook, null, services?.Settings, services?.Timer, services?.Autostart, () => Cleanup.IsBusy);
+
+        /// <summary>Справка (клавиша F1) — доступна всегда, и во время операции.</summary>
+        public RelayCommand HelpCommand => _helpCommand ?? (_helpCommand = new RelayCommand(() => _dialogs.ShowHelp()));
 
         /// <summary>Предпросмотр текущей операции (клавиша F5).</summary>
         public RelayCommand PreviewCommand { get; }
@@ -167,6 +201,22 @@ namespace IwoBridge.Wpf.ViewModels
                     Cleanup.SetSession(value.Session);
                 }
             }
+        }
+
+        /// <summary>
+        /// Запуск без окна (с Windows, в область уведомлений): только если приёмник уже настроен — окно «Подключение» без
+        /// видимой программы было бы непонятно. Возвращает, удалось ли; нет — окно нужно показать.
+        /// </summary>
+        public bool StartHidden()
+        {
+            if (_settings is null || LoadSaved(_settings, out ConnectionProfile? profile, out CredentialSecret? credentials) != null
+                || profile is null || credentials is null)
+            {
+                return false;
+            }
+
+            Start();
+            return true;
         }
 
         /// <summary>Запуск: открыть сохранённые подключения или сразу предложить настроить приёмник.</summary>
@@ -257,10 +307,11 @@ namespace IwoBridge.Wpf.ViewModels
 
         private void ApplyTarget(ITargetSession session)
         {
+            // Сначала то, что может отказать (операция идёт), — затем состояние окна: без полупримененного подключения.
+            Copy.SetTarget(session);
             ITargetSession? previous = _session;
             _session = session;
             TargetLabel = session.TargetLabel;
-            Copy.SetTarget(session);
             if (session.IsDemo)
             {
                 Copy.SetEwsSource(session);
@@ -275,9 +326,9 @@ namespace IwoBridge.Wpf.ViewModels
 
         private void ApplySource(ITargetSession session)
         {
+            Copy.SetEwsSource(session);
             ITargetSession? previous = _sourceSession;
             _sourceSession = session;
-            Copy.SetEwsSource(session);
             RebuildCleanupChoices();
             previous?.Dispose();
         }

@@ -1,0 +1,238 @@
+<Window x:Class="IwoBridge.Wpf.Views.HelpWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Справка — iwo Calendar Bridge"
+        Style="{StaticResource AppWindow}"
+        Width="760" Height="720" MinWidth="480" MinHeight="360"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="True">
+    <!-- Справка для человека, который видит программу впервые: по шагам, простыми словами, без терминов. Встроена в
+         программу (FlowDocument): работает без интернета и браузера. Поиск по тексту — Ctrl+F (кнопка с лупой внизу),
+         масштаб — Ctrl+колесо мыши. Esc закрывает окно. -->
+    <Window.Resources>
+        <Style TargetType="Paragraph">
+            <Setter Property="Margin" Value="0,0,0,10" />
+            <Setter Property="LineHeight" Value="21" />
+        </Style>
+        <Style x:Key="H1" TargetType="Paragraph">
+            <Setter Property="FontSize" Value="22" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Margin" Value="0,0,0,12" />
+        </Style>
+        <Style x:Key="H2" TargetType="Paragraph">
+            <Setter Property="FontSize" Value="17" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+            <Setter Property="Margin" Value="0,18,0,8" />
+        </Style>
+        <Style x:Key="Note" TargetType="Section">
+            <Setter Property="Background" Value="{DynamicResource InfoBackBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource InfoLineBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="12,8" />
+            <Setter Property="Margin" Value="0,4,0,12" />
+        </Style>
+        <Style TargetType="List">
+            <Setter Property="Margin" Value="0,0,0,10" />
+            <Setter Property="Padding" Value="24,0,0,0" />
+        </Style>
+        <Style TargetType="ListItem">
+            <Setter Property="Margin" Value="0,0,0,4" />
+        </Style>
+    </Window.Resources>
+    <Window.InputBindings>
+        <KeyBinding Key="Escape" Command="ApplicationCommands.Close" />
+    </Window.InputBindings>
+    <Window.CommandBindings>
+        <CommandBinding Command="ApplicationCommands.Close" Executed="OnClose" />
+    </Window.CommandBindings>
+
+    <FlowDocumentReader ViewingMode="Scroll" IsPageViewEnabled="False" IsTwoPageViewEnabled="False"
+                        AutomationProperties.Name="Справка" AutomationProperties.AutomationId="HelpDocument">
+        <FlowDocument FontFamily="Segoe UI" FontSize="14" PagePadding="32,24" ColumnWidth="99999" TextAlignment="Left"
+                      Background="{DynamicResource SurfaceBrush}" Foreground="{DynamicResource TextBrush}">
+
+            <Paragraph Style="{StaticResource H1}">Как пользоваться программой</Paragraph>
+            <Paragraph>
+                Программа делает <Bold>копию календаря</Bold>: берёт события из одного календаря (например, календаря
+                руководителя, который открыт у вас в Outlook) и записывает их в другой — ваш календарь на сервере
+                Exchange. Дальше она следит за изменениями: новое добавляет, изменённое исправляет, отменённое убирает.
+            </Paragraph>
+            <Section Style="{StaticResource Note}">
+                <Paragraph Margin="0">
+                    <Bold>Главное правило.</Bold> Программа никогда не меняет календарь, <Italic>откуда</Italic> копирует.
+                    А в календаре, <Italic>куда</Italic> копирует, трогает только свои копии. События, которые вы создали
+                    там сами, она не изменяет и не удаляет — ни вручную, ни по расписанию.
+                </Paragraph>
+            </Section>
+
+            <Paragraph Style="{StaticResource H2}">Что понадобится</Paragraph>
+            <List MarkerStyle="Disc">
+                <ListItem><Paragraph>Запущенный Outlook, в котором виден календарь, откуда копировать.</Paragraph></ListItem>
+                <ListItem><Paragraph>Адрес сервера Exchange, ваш логин и пароль — для календаря, куда копировать. Их знает администратор.</Paragraph></ListItem>
+            </List>
+
+            <Paragraph Style="{StaticResource H2}">Шаг 1. Куда копировать — кнопка «Приёмник…»</Paragraph>
+            <Paragraph>
+                При первом запуске это окно откроется само. Впишите адрес сервера, логин (например, <Run FontFamily="Consolas">DOMAIN&#x2060;\&#x2060;ivanov</Run>)
+                и пароль, выберите часовой пояс своего календаря и нажмите <Bold>«Сохранить»</Bold>. Программа проверит
+                подключение. Пароль хранится в защищённом хранилище Windows, а не в файлах программы.
+            </Paragraph>
+            <Paragraph>
+                Если сервер показал незнакомый сертификат, сверьте его отпечаток с администратором и нажмите
+                «Доверять этому сертификату» — это нужно один раз.
+            </Paragraph>
+
+            <Paragraph Style="{StaticResource H2}">Шаг 2. Откуда копировать</Paragraph>
+            <Paragraph>Вкладка <Bold>«Копирование»</Bold>, строка «Откуда».</Paragraph>
+            <List MarkerStyle="Decimal">
+                <ListItem><Paragraph>
+                    Выберите <Bold>«Outlook на этом компьютере»</Bold>. В списке — все календари из Outlook, в том числе
+                    раздел «Общие календари». Сразу выбран тот, что открыт в Outlook прямо сейчас.
+                </Paragraph></ListItem>
+                <ListItem><Paragraph>
+                    Нужного нет в списке? Впишите фамилию владельца (или часть названия календаря) в поле
+                    <Bold>«Найти по ФИО или названию»</Bold> и нажмите «Найти». Или откройте календарь в самом Outlook и
+                    нажмите «Обновить».
+                </Paragraph></ListItem>
+                <ListItem><Paragraph>
+                    Календарь лежит на другом сервере, а в Outlook его нет? Нажмите вверху <Bold>«Источник (EWS)…»</Bold>,
+                    заполните подключение так же, как в шаге 1, и выберите «Сервер по EWS».
+                </Paragraph></ListItem>
+            </List>
+            <Paragraph>
+                <Bold>Период</Bold> — какие даты копировать. Удобно нажать «месяц назад — 3 месяца вперёд». При
+                автокопировании период каждый день сдвигается вместе с датой.
+            </Paragraph>
+
+            <Paragraph Style="{StaticResource H2}">Шаг 3. Посмотрите, что будет сделано</Paragraph>
+            <Paragraph>
+                Нажмите <Bold>«Показать, что будет скопировано»</Bold> (или клавишу F5). Программа сравнит календари и
+                покажет список: что <Italic>создать</Italic>, что <Italic>перезаписать</Italic>, какие копии
+                <Italic>удалить</Italic>. На этом шаге ничего не меняется — можно смотреть спокойно.
+            </Paragraph>
+            <List MarkerStyle="Disc">
+                <ListItem><Paragraph>Галочка слева — выполнить строку. «Снять все» и затем отметить нужные — скопировать только часть.</Paragraph></ListItem>
+                <ListItem><Paragraph>
+                    Строка без галочки с пометкой <Bold>«У вас уже есть такое же событие»</Bold> — в вашем календаре уже есть
+                    событие с той же темой и тем же временем. Копия не создаётся, чтобы не было двух одинаковых. Если копия
+                    всё же нужна, поставьте галочку.
+                </Paragraph></ListItem>
+                <ListItem><Paragraph>«Удалить копию» — событие отменили или удалили в исходном календаре, и его копия больше не нужна.</Paragraph></ListItem>
+            </List>
+
+            <Paragraph Style="{StaticResource H2}">Шаг 4. Скопируйте</Paragraph>
+            <Paragraph>
+                Нажмите <Bold>«Скопировать выбранное…»</Bold> и подтвердите. Ход работы виден на полосе; «Остановить» (Esc)
+                прерывает после текущего события. В конце программа скажет, сколько сделано и что не удалось.
+                Приглашения участникам не рассылаются, напоминания на копиях выключены.
+            </Paragraph>
+            <Paragraph>
+                Повторное копирование безопасно: уже скопированное программа узнаёт и не дублирует.
+            </Paragraph>
+
+            <Paragraph Style="{StaticResource H2}">Автокопирование — «раз в N минут»</Paragraph>
+            <Paragraph>
+                В строке «Правила» отметьте <Bold>«Автоматически раз в»</Bold> и выберите, как часто: от 5 минут до раза в
+                сутки. Программа сама сравнивает календари и переносит разницу: добавляет новые события, исправляет
+                изменённые и убирает отменённые — точно по исходному календарю. Под кнопкой видно, когда было последнее
+                копирование и когда будет следующее.
+            </Paragraph>
+            <List MarkerStyle="Disc">
+                <ListItem><Paragraph>
+                    Программа должна быть запущена. Если закрыть окно, она уйдёт в <Bold>область уведомлений</Bold> у часов
+                    (значок с календарями) и продолжит работать. Открыть — двойной щелчок по значку. Выйти совсем —
+                    правой кнопкой по значку → «Выход».
+                </Paragraph></ListItem>
+                <ListItem><Paragraph>
+                    <Bold>«Запускать с Windows»</Bold> — программа сама запустится при входе в Windows и продолжит копировать.
+                </Paragraph></ListItem>
+                <ListItem><Paragraph>
+                    Если что-то пойдёт не так (нет связи, закрыт Outlook), появится уведомление у часов — одно, а не каждые
+                    N минут; когда связь вернётся, копирование продолжится само. Если программа увидит, что удалять придётся
+                    слишком много, она <Bold>ничего не удалит</Bold> и попросит вас проверить список вручную (шаг 3) — так
+                    бывает, когда выбран не тот календарь.
+                </Paragraph></ListItem>
+                <ListItem><Paragraph>
+                    Неверный пароль или нет прав — автокопирование <Bold>приостанавливается</Bold>, чтобы повторные входы
+                    не заблокировали учётную запись. Исправьте подключение кнопкой «Приёмник…» — копирование продолжится само.
+                </Paragraph></ListItem>
+                <ListItem><Paragraph>
+                    Пока открыт любой вопрос программы или идёт очистка, автокопирование ждёт и начнётся через минуту.
+                    Выбранный календарь программа никогда не подменяет другим: если его не видно в Outlook, копирование
+                    не выполняется, пока календарь не появится.
+                </Paragraph></ListItem>
+            </List>
+
+            <Paragraph Style="{StaticResource H2}">Личные события</Paragraph>
+            <Paragraph>
+                Событие, отмеченное в Outlook как <Bold>«Частное» («Личное»)</Bold> или «Конфиденциальное», программа по умолчанию копирует
+                только как «занято»: время сохранится, а тема, место и описание — нет. В строке «Правила» можно выбрать
+                иначе: «копировать полностью» (копия тоже будет личной) или «не копировать».
+            </Paragraph>
+
+            <Paragraph Style="{StaticResource H2}">Вложения и картинки</Paragraph>
+            <Paragraph>
+                Файлы во вложениях (документы, таблицы, PDF, картинки), вложенные письма и приглашения переносятся в копию.
+                Описание события переносится вместе с оформлением и вставленными картинками — так, как его видно в Outlook.
+                Не переносятся только ссылки на файлы, которых нет внутри события, — о них программа предупредит в списке.
+            </Paragraph>
+
+            <Paragraph Style="{StaticResource H2}">Очистка календаря</Paragraph>
+            <Paragraph>
+                Вкладка <Bold>«Очистка»</Bold> — чтобы удалить много событий сразу (например, дубли, оставленные другими
+                программами). Выберите ящик и период, нажмите «Показать, что будет удалено», проверьте два списка —
+                «Будет удалено» и «Останется», затем «Удалить…» и введите адрес ящика для подтверждения. По умолчанию
+                удалённое попадает в папку «Удалённые» и его можно вернуть. Список удалённого сохраняется в файл.
+            </Paragraph>
+
+            <Paragraph Style="{StaticResource H2}">Если что-то не получилось</Paragraph>
+            <Table CellSpacing="0" BorderBrush="{DynamicResource LineBrush}" BorderThickness="1" Margin="0,0,0,12">
+                <Table.Columns>
+                    <TableColumn Width="2*" />
+                    <TableColumn Width="3*" />
+                </Table.Columns>
+                <TableRowGroup>
+                    <TableRow Background="{DynamicResource PageBrush}" FontWeight="SemiBold">
+                        <TableCell Padding="8,6"><Paragraph Margin="0">Что видите</Paragraph></TableCell>
+                        <TableCell Padding="8,6"><Paragraph Margin="0">Что сделать</Paragraph></TableCell>
+                    </TableRow>
+                    <TableRow>
+                        <TableCell Padding="8,6"><Paragraph Margin="0">«Outlook не запущен»</Paragraph></TableCell>
+                        <TableCell Padding="8,6"><Paragraph Margin="0">Откройте Outlook, дождитесь, пока он загрузится, и нажмите «Обновить».</Paragraph></TableCell>
+                    </TableRow>
+                    <TableRow>
+                        <TableCell Padding="8,6"><Paragraph Margin="0">Нужного календаря нет в списке</Paragraph></TableCell>
+                        <TableCell Padding="8,6"><Paragraph Margin="0">Впишите фамилию владельца в поле «Найти по ФИО или названию». Или откройте его в Outlook: «Общие календари» → «Добавить календарь».</Paragraph></TableCell>
+                    </TableRow>
+                    <TableRow>
+                        <TableCell Padding="8,6"><Paragraph Margin="0">«Неверный логин или пароль»</Paragraph></TableCell>
+                        <TableCell Padding="8,6"><Paragraph Margin="0">Проверьте раскладку и Caps Lock, затем «Приёмник…» → введите пароль заново. Программа не повторяет вход сама, чтобы не заблокировать учётную запись.</Paragraph></TableCell>
+                    </TableRow>
+                    <TableRow>
+                        <TableCell Padding="8,6"><Paragraph Margin="0">«Сервер недоступен»</Paragraph></TableCell>
+                        <TableCell Padding="8,6"><Paragraph Margin="0">Проверьте интернет и VPN. Если программа запущена через прокси или VPN другой страны, отключите его.</Paragraph></TableCell>
+                    </TableRow>
+                    <TableRow>
+                        <TableCell Padding="8,6"><Paragraph Margin="0">«Похоже на ошибку чтения — много копий на удаление»</Paragraph></TableCell>
+                        <TableCell Padding="8,6"><Paragraph Margin="0">Проверьте, что выбран тот календарь. Если удалить и правда нужно, поставьте галочку «Это ожидаемо» и снова нажмите «Показать».</Paragraph></TableCell>
+                    </TableRow>
+                    <TableRow>
+                        <TableCell Padding="8,6"><Paragraph Margin="0">«Замечания к источнику»</Paragraph></TableCell>
+                        <TableCell Padding="8,6"><Paragraph Margin="0">Отдельные повторения серии повреждены в самом Outlook (он их тоже не открывает). Остальное копируется как обычно.</Paragraph></TableCell>
+                    </TableRow>
+                </TableRowGroup>
+            </Table>
+            <Paragraph>
+                Подробности ошибки для администратора — под ссылкой «Подробности для администратора» в самом сообщении.
+                Непредвиденные сбои записываются в файл <Run FontFamily="Consolas">logs\crash.log</Run> в папке программы.
+            </Paragraph>
+
+            <Paragraph Style="{StaticResource H2}">Клавиши</Paragraph>
+            <List MarkerStyle="Disc">
+                <ListItem><Paragraph><Bold>F1</Bold> — эта справка; <Bold>F5</Bold> — показать, что будет сделано; <Bold>Esc</Bold> — остановить.</Paragraph></ListItem>
+                <ListItem><Paragraph><Bold>Alt</Bold> + подчёркнутая буква — нажать кнопку или перейти к полю.</Paragraph></ListItem>
+                <ListItem><Paragraph>В справке: <Bold>Ctrl+F</Bold> — поиск по тексту, <Bold>Ctrl + колесо мыши</Bold> — крупнее или мельче.</Paragraph></ListItem>
+            </List>
+        </FlowDocument>
+    </FlowDocumentReader>
+</Window>

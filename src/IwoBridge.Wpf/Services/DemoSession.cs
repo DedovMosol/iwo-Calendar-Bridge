@@ -66,6 +66,8 @@ namespace IwoBridge.Wpf.Services
 
         public bool StopsBatch(Exception exception) => false;
 
+        public bool NeedsAttention(Exception exception) => false;
+
         public UserMessage Describe(Exception exception)
         {
             return ErrorMessages.For(Core.Errors.OperationErrorKind.Unknown, exception?.Message);
@@ -134,6 +136,9 @@ namespace IwoBridge.Wpf.Services
             }
 
             public Task<IReadOnlyList<BridgeCopy>> ReadCopiesAsync(CancellationToken cancellationToken) => _inner.ReadCopiesAsync(cancellationToken);
+
+            public Task<IReadOnlyList<OwnEvent>> ReadOwnEventsAsync(DateTime windowStartUtc, DateTime windowEndUtc, CancellationToken cancellationToken) =>
+                _inner.ReadOwnEventsAsync(windowStartUtc, windowEndUtc, cancellationToken);
 
             public async Task CreateAsync(SourceItem item, IReadOnlyList<AttachmentContent> attachments, CancellationToken cancellationToken)
             {

@@ -41,5 +41,8 @@ namespace IwoBridge.Wpf.Services
 
         /// <summary>Ошибка всего подключения (вход, связь, права) — пакетная запись на ней останавливается.</summary>
         bool StopsBatch(Exception exception);
+
+        /// <summary>Ошибку исправит только человек (вход, права, сертификат) — автокопирование приостанавливается.</summary>
+        bool NeedsAttention(Exception exception);
     }
 }

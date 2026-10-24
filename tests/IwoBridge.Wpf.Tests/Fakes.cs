@@ -30,7 +30,8 @@ namespace IwoBridge.Wpf.Tests
 
         public MemoryManifest Manifest { get; }
 
-        public string TargetLabel => "user@example.test на mail.example.test";
+        /// <summary>Подпись ящика; у источника по EWS в тестах — своя (иначе это «один и тот же ящик»).</summary>
+        public string TargetLabel { get; set; } = "user@example.test на mail.example.test";
 
         public string ConfirmationPhrase => "user@example.test";
 
@@ -54,6 +55,11 @@ namespace IwoBridge.Wpf.Tests
         public Func<Exception, bool> Fatal { get; set; } = _ => false;
 
         public bool StopsBatch(Exception exception) => Fatal(exception);
+
+        /// <summary>Ошибка, которую исправит только человек (по умолчанию — никакая).</summary>
+        public Func<Exception, bool> Attention { get; set; } = _ => false;
+
+        public bool NeedsAttention(Exception exception) => Attention(exception);
 
         public bool IsDisposed { get; private set; }
 
@@ -111,7 +117,7 @@ namespace IwoBridge.Wpf.Tests
             return ConfirmAnswer;
         }
 
-        public bool Ask(string title, string question)
+        public bool Ask(string title, string question, string confirm, string cancel = "Отмена")
         {
             Questions.Add(question);
             return AskAnswer;
@@ -121,6 +127,13 @@ namespace IwoBridge.Wpf.Tests
         {
             ShownFile = path;
         }
+
+        public int HelpShown { get; private set; }
+
+        /// <summary>«Открыто модальное окно» — для проверки, что автокопирование его ждёт.</summary>
+        public bool IsShowingDialog { get; set; }
+
+        public void ShowHelp() => HelpShown++;
 
         public bool Show(ConnectionViewModel connection)
         {

@@ -12,12 +12,20 @@ namespace IwoBridge.Wpf.Services
     public sealed class SourceChoice
     {
         /// <param name="isCurrent">Этот календарь сейчас открыт в окне Outlook — выбирается по умолчанию.</param>
-        public SourceChoice(string label, ISourceCalendar calendar, bool isCurrent = false)
+        /// <param name="key">Постоянный идентификатор (EntryID папки) — по нему выбор узнаётся после перезапуска; <c>null</c> — подпись.</param>
+        public SourceChoice(string label, ISourceCalendar calendar, bool isCurrent = false, string? key = null)
         {
             Label = label ?? throw new ArgumentNullException(nameof(label));
             Calendar = calendar ?? throw new ArgumentNullException(nameof(calendar));
             IsCurrent = isCurrent;
+            Key = string.IsNullOrEmpty(key) ? label : key!;
         }
+
+        /// <summary>
+        /// Чем календарь узнаётся при следующем чтении списка: подпись зависит от того, есть ли у Outlook окно (группы
+        /// панели), а идентификатор папки — нет.
+        /// </summary>
+        public string Key { get; }
 
         public string Label { get; }
 
@@ -54,13 +62,13 @@ namespace IwoBridge.Wpf.Services
         public async Task<IReadOnlyList<SourceChoice>> ListAsync()
         {
             IReadOnlyList<OutlookCalendarRef> calendars = await _session.ListCalendarsAsync().ConfigureAwait(true);
-            return calendars.Select(c => new SourceChoice(c.Label, _session.Open(c), c.IsCurrent)).ToArray();
+            return calendars.Select(c => new SourceChoice(c.Label, _session.Open(c), c.IsCurrent, c.EntryId)).ToArray();
         }
 
         public async Task<SourceChoice> FindSharedAsync(string owner)
         {
             OutlookCalendarRef calendar = await _session.FindSharedAsync(owner).ConfigureAwait(true);
-            return new SourceChoice(calendar.Label, _session.Open(calendar));
+            return new SourceChoice(calendar.Label, _session.Open(calendar), key: calendar.EntryId);
         }
 
         public void Dispose()

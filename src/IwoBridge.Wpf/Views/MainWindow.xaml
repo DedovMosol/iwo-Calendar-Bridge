@@ -22,6 +22,7 @@
     <Window.InputBindings>
         <KeyBinding Key="F5" Command="{Binding PreviewCommand}" />
         <KeyBinding Key="Escape" Command="{Binding StopCommand}" />
+        <KeyBinding Key="F1" Command="{Binding HelpCommand}" />
     </Window.InputBindings>
 
     <DockPanel>
@@ -31,6 +32,7 @@
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
@@ -48,6 +50,9 @@
                         AutomationProperties.AutomationId="EditSourceButton"
                         Command="{Binding EditSourceCommand}"
                         ToolTip="Необязательно: откуда копировать, если не из Outlook этого компьютера, — другой сервер Exchange по EWS." />
+                <Button Grid.Column="4" Margin="8,0,0,0" Content="Сп_равка" VerticalAlignment="Center"
+                        Command="{Binding HelpCommand}" AutomationProperties.AutomationId="HelpButton"
+                        ToolTip="Как пользоваться программой — по шагам. (F1)" />
             </Grid>
         </Border>
 
@@ -71,7 +76,8 @@
                 <!-- Отступы страницы заданы самой прокрутке (Padding): её видимая высота тогда уже без отступов, и
                      страница ровно в окно не даёт лишней полосы прокрутки. FillPanel отдаёт карточке со списком всё
                      свободное место. -->
-                <ScrollViewer x:Name="Page" Padding="20,14" Focusable="False"
+                <!-- Пока идёт автокопирование (вкладка «Копирование» занята), очистка ждёт: одна операция с ящиком за раз. -->
+                <ScrollViewer x:Name="Page" Padding="20,14" Focusable="False" IsEnabled="{Binding Copy.IsIdle}"
                               VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <views:FillPanel x:Name="PageContent" DataContext="{Binding Cleanup}"
                                      ViewportHeight="{Binding ViewportHeight, ElementName=Page}">

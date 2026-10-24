@@ -276,6 +276,39 @@ namespace IwoBridge.Wpf.Tests
         }
 
         [Fact]
+        public void QuestionWindow_ButtonsApart_CancelIsDefault_ConfirmReturnsTrue()
+        {
+            UiThread.Run(async () =>
+            {
+                using (BindingErrors errors = BindingErrors.Attach())
+                {
+                    var window = new QuestionWindow("Скопировать?", "Откуда: А\nКуда: Б\n\n• создать 3 события", "Скопировать", "Отмена");
+                    try
+                    {
+                        Visuals.ShowOffscreen(window, double.NaN, double.NaN);
+                        await Visuals.Settle(window);
+                        var root = (FrameworkElement)window.Content;
+                        var cancel = Visuals.ByAutomationId<Button>(window, "CancelButton");
+                        var confirm = Visuals.ByAutomationId<Button>(window, "ConfirmButton");
+
+                        // Отказ — у левого края, действие — у правого: между ними пусто, промахнуться трудно.
+                        Rect left = Visuals.BoundsIn(cancel, root), right = Visuals.BoundsIn(confirm, root);
+                        Assert.True(left.Left < 30, $"«Отмена» не слева: {left}");
+                        Assert.True(right.Right > root.ActualWidth - 30, $"«Скопировать» не справа: {right}");
+                        Assert.True(right.Left - left.Right > 100, "кнопки рядом");
+                        Assert.True(cancel.IsDefault && cancel.IsCancel, "Enter и Esc должны отказывать");
+                        Assert.Equal("Скопировать", confirm.Content);
+                        Assert.Equal(string.Empty, errors.Text);
+                    }
+                    finally
+                    {
+                        window.Close();
+                    }
+                }
+            });
+        }
+
+        [Fact]
         public void ConfirmWindow_TinyScreen_ButtonsStayInside()
         {
             UiThread.Run(async () =>

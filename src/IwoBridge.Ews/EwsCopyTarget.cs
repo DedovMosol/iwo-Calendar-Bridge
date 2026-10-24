@@ -10,6 +10,7 @@ using IwoBridge.Core.Sync;
 using IwoBridge.Core.Time;
 using IwoBridge.Ews.Mapping;
 using Task = System.Threading.Tasks.Task;
+using TimeWindow = IwoBridge.Core.Time.TimeWindow;
 
 namespace IwoBridge.Ews
 {
@@ -30,6 +31,9 @@ namespace IwoBridge.Ews
         // Окно поиска повторения серии вокруг его исходного начала (сервер отдаёт надмножество — сверяем точно).
         private static readonly TimeSpan OccurrenceSearch = TimeSpan.FromDays(1);
 
+        /// <summary>Отпечаток недописанной копии: ни с одним событием не совпадает.</summary>
+        private const string IncompleteHash = "incomplete";
+
         private readonly EwsChannel _read;
         private readonly EwsChannel _write;
         private readonly FolderId _calendar;
@@ -48,42 +52,17 @@ namespace IwoBridge.Ews
         public async Task<IReadOnlyList<BridgeCopy>> ReadCopiesAsync(CancellationToken cancellationToken)
         {
             var found = new List<(string Id, string SourceId, bool IsMaster, DateTime Start, DateTime End, string? Hash, string? Subject)>();
-            for (int offset = 0; ; offset += PageSize)
+            IReadOnlyList<Appointment> copies = await ListAsync(new SearchFilter.Exists(BridgeExtendedProperties.SourceId), cancellationToken).ConfigureAwait(false);
+            foreach (Appointment appointment in copies)
             {
-                var view = new ItemView(PageSize, offset, OffsetBasePoint.Beginning)
+                if (appointment.TryGetProperty(BridgeExtendedProperties.SourceId, out object source) && source is string sourceId && sourceId.Length > 0
+                    && appointment.TryGetProperty(AppointmentSchema.Start, out DateTime start)
+                    && appointment.TryGetProperty(AppointmentSchema.End, out DateTime end))
                 {
-                    PropertySet = new PropertySet(
-                        BasePropertySet.IdOnly,
-                        ItemSchema.Subject,
-                        AppointmentSchema.Start,
-                        AppointmentSchema.End,
-                        AppointmentSchema.AppointmentType,
-                        BridgeExtendedProperties.SourceId,
-                        BridgeExtendedProperties.ContentHash),
-                };
-                view.OrderBy.Add(ItemSchema.DateTimeCreated, SortDirection.Ascending);
-                var onlyCopies = new SearchFilter.Exists(BridgeExtendedProperties.SourceId);
-                FindItemsResults<Item> page = await _read
-                    .RunAsync(service => service.FindItems(_calendar, onlyCopies, view), cancellationToken)
-                    .ConfigureAwait(false);
-
-                foreach (Item item in page.Items)
-                {
-                    if (item is Appointment appointment
-                        && appointment.TryGetProperty(BridgeExtendedProperties.SourceId, out object source) && source is string sourceId && sourceId.Length > 0
-                        && appointment.TryGetProperty(AppointmentSchema.Start, out DateTime start)
-                        && appointment.TryGetProperty(AppointmentSchema.End, out DateTime end))
-                    {
-                        appointment.TryGetProperty(AppointmentSchema.AppointmentType, out AppointmentType type);
-                        string? hash = appointment.TryGetProperty(BridgeExtendedProperties.ContentHash, out object h) ? h as string : null;
-                        appointment.TryGetProperty(ItemSchema.Subject, out string subject);
-                        found.Add((appointment.Id.UniqueId, sourceId, type == AppointmentType.RecurringMaster, TimeMapper.ToUtc(start), TimeMapper.ToUtc(end), hash, subject));
-                    }
-                }
-
-                if (!page.MoreAvailable)
-                {
-                    break;
+                    appointment.TryGetProperty(AppointmentSchema.AppointmentType, out AppointmentType type);
+                    string? hash = appointment.TryGetProperty(BridgeExtendedProperties.ContentHash, out object h) ? h as string : null;
+                    appointment.TryGetProperty(ItemSchema.Subject, out string subject);
+                    found.Add((appointment.Id.UniqueId, sourceId, type == AppointmentType.RecurringMaster, TimeMapper.ToUtc(start), TimeMapper.ToUtc(end), hash, subject));
                 }
             }
 
@@ -105,6 +84,61 @@ namespace IwoBridge.Ews
             }).ToArray();
         }
 
+        public async Task<IReadOnlyList<OwnEvent>> ReadOwnEventsAsync(DateTime windowStartUtc, DateTime windowEndUtc, CancellationToken cancellationToken)
+        {
+            // Без метки моста: события человека. Серии — все (их первое повторение может быть задолго до периода).
+            IReadOnlyList<Appointment> own = await ListAsync(
+                new SearchFilter.Not(new SearchFilter.Exists(BridgeExtendedProperties.SourceId)), cancellationToken).ConfigureAwait(false);
+            var result = new List<OwnEvent>();
+            foreach (Appointment appointment in own)
+            {
+                if (!appointment.TryGetProperty(AppointmentSchema.Start, out DateTime start) || !appointment.TryGetProperty(AppointmentSchema.End, out DateTime end))
+                {
+                    continue;
+                }
+
+                appointment.TryGetProperty(AppointmentSchema.AppointmentType, out AppointmentType type);
+                appointment.TryGetProperty(ItemSchema.Subject, out string subject);
+                bool series = type == AppointmentType.RecurringMaster;
+                DateTime startUtc = TimeMapper.ToUtc(start), endUtc = TimeMapper.ToUtc(end);
+                if (series || TimeWindow.Overlaps(startUtc, endUtc, windowStartUtc, windowEndUtc))
+                {
+                    result.Add(new OwnEvent(subject, startUtc, endUtc, series ? ItemKind.RecurringMaster : ItemKind.Single));
+                }
+            }
+
+            return result;
+        }
+
+        /// <summary>Все элементы календаря под фильтром — постранично, без раскрытия серий (одно место для копий и своих событий).</summary>
+        private async Task<IReadOnlyList<Appointment>> ListAsync(SearchFilter filter, CancellationToken cancellationToken)
+        {
+            var all = new List<Appointment>();
+            for (int offset = 0; ; offset += PageSize)
+            {
+                var view = new ItemView(PageSize, offset, OffsetBasePoint.Beginning)
+                {
+                    PropertySet = new PropertySet(
+                        BasePropertySet.IdOnly,
+                        ItemSchema.Subject,
+                        AppointmentSchema.Start,
+                        AppointmentSchema.End,
+                        AppointmentSchema.AppointmentType,
+                        BridgeExtendedProperties.SourceId,
+                        BridgeExtendedProperties.ContentHash),
+                };
+                view.OrderBy.Add(ItemSchema.DateTimeCreated, SortDirection.Ascending);
+                FindItemsResults<Item> page = await _read
+                    .RunAsync(service => service.FindItems(_calendar, filter, view), cancellationToken)
+                    .ConfigureAwait(false);
+                all.AddRange(page.Items.OfType<Appointment>());
+                if (!page.MoreAvailable)
+                {
+                    return all;
+                }
+            }
+        }
+
         public async Task CreateAsync(SourceItem item, IReadOnlyList<AttachmentContent> attachments, CancellationToken cancellationToken)
         {
             if (item is null)
@@ -112,19 +146,55 @@ namespace IwoBridge.Ews
                 throw new ArgumentNullException(nameof(item));
             }
 
+            // Копия либо записана целиком (событие, вложения, исключения серии), либо её нет. Вложения и исключения EWS
+            // пишет отдельными запросами после самого события, а отпечаток уже в событии: недописанная копия с верным
+            // отпечатком считалась бы точной навсегда. Поэтому при сбое на любом шаге созданное удаляется — и следующий
+            // запуск создаст копию заново.
             ItemId id = await _write.RunAsync(
                 service =>
                 {
                     var appointment = new Appointment(service);
-                    Fill(appointment, item, attachments);
-                    appointment.Save(_calendar, SendInvitationsMode.SendToNone);
+                    Fill(appointment, item, attachments, item.ContentHash);
+                    try
+                    {
+                        appointment.Save(_calendar, SendInvitationsMode.SendToNone);
+                    }
+                    catch (Exception) when (!appointment.IsNew)
+                    {
+                        Discard(service, appointment.Id); // событие создано, а вложение — нет
+                        throw;
+                    }
+
                     return appointment.Id;
                 },
-                cancellationToken).ConfigureAwait(false);
+                cancellationToken,
+                retry: false).ConfigureAwait(false); // создание неидемпотентно: потерянный ответ + повтор = дубль
 
             if (item.Recurrence != null && item.Exceptions.Count > 0)
             {
-                await ApplyExceptionsAsync(id, item, cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    await ApplyExceptionsAsync(id, item, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception)
+                {
+                    await _write.RunAsync(service => Discard(service, id), CancellationToken.None).ConfigureAwait(false);
+                    throw;
+                }
+            }
+        }
+
+        /// <summary>Удалить недописанную копию (свою, только что созданную) — без «Удалённых»; сбой удаления не маскирует исходный.</summary>
+        private static void Discard(ExchangeService service, ItemId id)
+        {
+            try
+            {
+                service.DeleteItems(new[] { id }, DeleteMode.HardDelete, SendCancellationsMode.SendToNone, AffectedTaskOccurrence.AllOccurrences);
+            }
+#pragma warning disable CA1031 // Не удалилась — у неё не будет верного отпечатка? Будет: следующий план удалит её как дубль.
+            catch (Exception)
+#pragma warning restore CA1031
+            {
             }
         }
 
@@ -143,13 +213,19 @@ namespace IwoBridge.Ews
                 return;
             }
 
+            // Сначала содержимое с отпечатком «не дописано», настоящий отпечаток — последним запросом: прервётся посередине
+            // (вложения пишутся отдельно) — отпечаток не совпадёт ни с одним событием, и следующий запуск перезапишет копию.
+            // Пустая строка не годится: EWS не записывает пустое значение свойства (проверено вживую).
             await _write.RunAsync(
                 service =>
                 {
                     Appointment appointment = Appointment.Bind(service, new ItemId(copyItemId), new PropertySet(BasePropertySet.FirstClassProperties));
                     appointment.Attachments.Clear();
-                    Fill(appointment, item, attachments);
+                    Fill(appointment, item, attachments, IncompleteHash);
                     appointment.Update(ConflictResolutionMode.AlwaysOverwrite, SendInvitationsOrCancellationsMode.SendToNone);
+                    Appointment stamp = Appointment.Bind(service, appointment.Id, new PropertySet(BasePropertySet.IdOnly));
+                    stamp.SetExtendedProperty(BridgeExtendedProperties.ContentHash, item.ContentHash);
+                    stamp.Update(ConflictResolutionMode.AlwaysOverwrite, SendInvitationsOrCancellationsMode.SendToNone);
                 },
                 cancellationToken).ConfigureAwait(false);
         }
@@ -179,12 +255,22 @@ namespace IwoBridge.Ews
         }
 
         /// <summary>Поля копии из события источника (одно место для создания и перезаписи — DRY).</summary>
-        private void Fill(Appointment appointment, SourceItem item, IReadOnlyList<AttachmentContent> attachments)
+        private void Fill(Appointment appointment, SourceItem item, IReadOnlyList<AttachmentContent> attachments, string contentHash)
         {
             (DateTime start, DateTime end) = EwsFieldMapper.TimesForWrite(item.StartUtc, item.EndUtc, item.IsAllDay, _calendarZone);
             appointment.Subject = item.Subject;
             appointment.Location = item.Location;
-            appointment.Body = new MessageBody(BodyType.Text, item.Body);
+            if (item.RtfCompressed != null)
+            {
+                // Описание с оформлением и картинками — исходным RTF (MapiRtf); текст и HTML Exchange построит сам.
+                appointment.SetExtendedProperty(MapiProperties.RtfCompressed, item.RtfCompressed);
+                appointment.SetExtendedProperty(MapiProperties.RtfInSync, true);
+            }
+            else
+            {
+                appointment.Body = new MessageBody(BodyType.Text, item.Body);
+            }
+
             // Пояс события — пояс календаря приёмника. У новой копии он и так берётся из канала записи, а у
             // перезаписываемой (Bind) не загружен, и Exchange 2007 без него не меняет время (проверено вживую).
             appointment.StartTimeZone = _calendarZone;
@@ -195,7 +281,7 @@ namespace IwoBridge.Ews
             appointment.Sensitivity = EwsFieldMapper.ToEws(item.Sensitivity);
             appointment.IsReminderSet = false;
             appointment.SetExtendedProperty(BridgeExtendedProperties.SourceId, item.SourceId);
-            appointment.SetExtendedProperty(BridgeExtendedProperties.ContentHash, item.ContentHash);
+            appointment.SetExtendedProperty(BridgeExtendedProperties.ContentHash, contentHash);
             if (item.Recurrence != null)
             {
                 appointment.Recurrence = EwsRecurrenceMapper.ToEws(item.Recurrence);
@@ -203,7 +289,11 @@ namespace IwoBridge.Ews
 
             foreach (AttachmentContent attachment in attachments)
             {
-                appointment.Attachments.AddFileAttachment(attachment.Name, attachment.Content);
+                FileAttachment file = appointment.Attachments.AddFileAttachment(attachment.Name, attachment.Content);
+                if (attachment.ContentId != null)
+                {
+                    file.ContentId = attachment.ContentId; // картинка внутри описания (ссылка cid:)
+                }
             }
         }
 
@@ -220,6 +310,12 @@ namespace IwoBridge.Ews
                     return master.TryGetProperty(AppointmentSchema.ICalUid, out string value) ? value : null;
                 },
                 cancellationToken).ConfigureAwait(false);
+
+            // Без UID повторение своей серии не отличить от чужого события в то же время — а дальше удаление. Не рисковать.
+            if (string.IsNullOrEmpty(uid))
+            {
+                throw new InvalidOperationException("Сервер не вернул идентификатор созданной серии — исключения серии не применены.");
+            }
 
             foreach (SourceException exception in item.Exceptions)
             {
