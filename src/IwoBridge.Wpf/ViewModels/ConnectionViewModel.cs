@@ -36,6 +36,7 @@ namespace IwoBridge.Wpf.ViewModels
         private readonly IDialogService _dialogs;
         private readonly ConnectionProfile? _savedProfile;
         private readonly CredentialSecret? _savedCredentials;
+        private readonly bool _keepProfileWithoutPassword;
 
         private string _server = string.Empty;
         private string _alternateServer = string.Empty;
@@ -58,6 +59,7 @@ namespace IwoBridge.Wpf.ViewModels
         private string? _lastCheckKey;
         private CancellationTokenSource? _cancellation;
         private bool _closed;
+        private bool _remember;
 
         // Доверие к сертификату принадлежит адресу (хост:порт, ServerEndpoint.Key), а не окну и не полю: у основного и
         // резервного адреса оно своё; при смене адреса отпечаток прежнего не теряется и восстанавливается при возврате
@@ -74,9 +76,15 @@ namespace IwoBridge.Wpf.ViewModels
             ConnectionProfile? savedProfile,
             CredentialSecret? savedCredentials,
             string? loadError = null,
-            string title = "Подключение к серверу")
+            string title = "Подключение к серверу",
+            string? savedUserName = null,
+            bool keepProfileWithoutPassword = true)
         {
             Title = title;
+            _keepProfileWithoutPassword = keepProfileWithoutPassword;
+
+            // Новое подключение — запомнить (так привычнее); прежнее — как было сохранено.
+            _remember = savedProfile is null || savedCredentials != null;
             _settings = settings ?? throw new ArgumentNullException(nameof(settings));
             _connector = connector ?? throw new ArgumentNullException(nameof(connector));
             _dialogs = dialogs ?? throw new ArgumentNullException(nameof(dialogs));
@@ -97,7 +105,7 @@ namespace IwoBridge.Wpf.ViewModels
                 }
             }
 
-            _userName = savedCredentials?.UserName ?? string.Empty;
+            _userName = savedCredentials?.UserName ?? savedUserName ?? string.Empty;
 
             CheckCommand = new AsyncCommand(CheckAsync, () => !_isChecking);
             SaveCommand = new AsyncCommand(SaveAsync, () => !_isChecking);
@@ -205,7 +213,35 @@ namespace IwoBridge.Wpf.ViewModels
         /// <summary>Подсказка под полем пароля.</summary>
         public string PasswordHint => KeepsSavedPassword
             ? "Пароль сохранён в Windows. Оставьте поле пустым, чтобы не менять его."
-            : "Хранится только в диспетчере учётных данных Windows, не в файлах программы.";
+            : _remember
+                ? "Хранится только в диспетчере учётных данных Windows, не в файлах программы."
+                : "Пароль нигде не сохраняется и нужен только до закрытия программы.";
+
+        /// <summary>
+        /// Галочка «Запомнить»: пароль сохраняется в диспетчере учётных данных Windows. Снята — пароль живёт только в
+        /// памяти до закрытия программы, прежняя запись удаляется при сохранении.
+        /// </summary>
+        public bool Remember
+        {
+            get => _remember;
+            set
+            {
+                if (SetProperty(ref _remember, value))
+                {
+                    OnPropertyChanged(nameof(PasswordHint));
+                    OnPropertyChanged(nameof(RememberHint));
+                }
+            }
+        }
+
+        /// <summary>Что значит галочка «Запомнить» для этого подключения.</summary>
+        public string RememberHint => _keepProfileWithoutPassword
+            ? _remember
+                ? "Пароль сохраняется в Windows: при следующем запуске программа подключится сама, автокопирование продолжится."
+                : "При следующем запуске программа попросит пароль. Автокопирование при входе в Windows без пароля не начнётся."
+            : _remember
+                ? "Ящик останется в списке и после перезапуска программы, пароль сохраняется в Windows."
+                : "Ящик будет в списке только до закрытия программы, ни адрес, ни пароль не сохраняются.";
 
         public string? ServerError
         {
@@ -414,8 +450,21 @@ namespace IwoBridge.Wpf.ViewModels
             {
                 // Сначала пароль, затем файл: если диспетчер учётных данных недоступен, на диске не окажется нового
                 // сервера со старым паролем, а сообщение «не сохранено» будет правдой.
-                _settings.SaveCredentials(credentials!);
-                _settings.SaveProfile(profile!);
+                if (_remember)
+                {
+                    _settings.SaveCredentials(credentials!);
+                    _settings.SaveProfile(profile!, null);
+                }
+                else if (_keepProfileWithoutPassword)
+                {
+                    // Без пароля помнятся сервер, ящик и учётная запись: при следующем запуске вводится только пароль.
+                    _settings.DeleteCredentials();
+                    _settings.SaveProfile(profile!, credentials!.UserName);
+                }
+                else
+                {
+                    _settings.Delete();
+                }
             }
 #pragma warning disable CA1031 // Нет прав на папку, диск, диспетчер учётных данных — показываем, окно не закрываем.
             catch (Exception ex)

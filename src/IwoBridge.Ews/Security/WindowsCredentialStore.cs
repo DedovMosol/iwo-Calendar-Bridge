@@ -114,6 +114,19 @@ namespace IwoBridge.Ews.Security
             }
         }
 
+        public void Delete(string target)
+        {
+            RequireTarget(target);
+            if (!CredDeleteW(target, CredTypeGeneric, 0))
+            {
+                int error = Marshal.GetLastWin32Error();
+                if (error != ErrorNotFound)
+                {
+                    throw new Win32Exception(error, "Не удалось удалить учётные данные из диспетчера учётных данных Windows.");
+                }
+            }
+        }
+
         private static void RequireTarget(string target)
         {
             if (string.IsNullOrWhiteSpace(target))
@@ -129,6 +142,10 @@ namespace IwoBridge.Ews.Security
         [DllImport("advapi32.dll", EntryPoint = "CredWriteW", CharSet = CharSet.Unicode, SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool CredWriteW([In] ref NativeCredential credential, int flags);
+
+        [DllImport("advapi32.dll", EntryPoint = "CredDeleteW", CharSet = CharSet.Unicode, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool CredDeleteW(string target, int type, int flags);
 
         [DllImport("advapi32.dll", EntryPoint = "CredFree")]
         private static extern void CredFree(IntPtr credential);

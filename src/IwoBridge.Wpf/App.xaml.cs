@@ -120,12 +120,13 @@ namespace IwoBridge.Wpf
             var credentials = new WindowsCredentialStore();
             var target = new AppSettingsStore(Path.Combine(root, "config", "connection.json"), credentials, CredentialTargets.Ews);
             var source = new AppSettingsStore(Path.Combine(root, "config", "source-connection.json"), credentials, CredentialTargets.EwsSource);
+            var mailboxes = new MailboxStores(Path.Combine(root, "config", "mailboxes"), credentials);
             var connector = new EwsConnector(Path.Combine(root, "manifests"));
             _outlook = new OutlookCalendars();
             var autostart = new RegistryAutostart(System.Reflection.Assembly.GetEntryAssembly()!.Location);
             autostart.Refresh();
             var copy = new CopyServices(new FileCopySettingsStore(Path.Combine(root, "config", "copy.json")), new DispatcherOneShotTimer(), autostart);
-            return new MainViewModel(target, connector, dialogs, dialogs, LocalOffset, source, _outlook, copy);
+            return new MainViewModel(target, connector, dialogs, dialogs, LocalOffset, source, _outlook, copy, mailboxes);
         }
 
         private static TimeSpan LocalOffset()

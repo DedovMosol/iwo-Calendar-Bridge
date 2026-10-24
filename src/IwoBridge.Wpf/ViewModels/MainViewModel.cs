@@ -37,18 +37,26 @@ namespace IwoBridge.Wpf.ViewModels
         public IAutostart? Autostart { get; }
     }
 
-    /// <summary>Ящик, который можно очистить (приёмник или источник по EWS).</summary>
+    /// <summary>Ящик, который можно очистить: приёмник, источник по EWS или добавленная почта.</summary>
     public sealed class CleanupChoice
     {
-        internal CleanupChoice(string label, ITargetSession session)
+        internal CleanupChoice(string label, ITargetSession session, bool isAdded = false, ISettingsStore? store = null)
         {
             Label = label;
             Session = session;
+            IsAdded = isAdded;
+            Store = store;
         }
 
         public string Label { get; }
 
         internal ITargetSession Session { get; }
+
+        /// <summary>Почта, добавленная кнопкой «Добавить почту…»: её можно убрать из списка.</summary>
+        internal bool IsAdded { get; }
+
+        /// <summary>Где запомнена добавленная почта; <c>null</c> — только до закрытия программы.</summary>
+        internal ISettingsStore? Store { get; }
     }
 
     /// <summary>
@@ -64,6 +72,8 @@ namespace IwoBridge.Wpf.ViewModels
     {
         private readonly ISettingsStore? _settings;
         private readonly ISettingsStore? _sourceSettings;
+        private readonly IMailboxStores? _mailboxStores;
+        private readonly List<CleanupChoice> _added = new List<CleanupChoice>();
         private readonly ITargetConnector? _connector;
         private readonly IDialogService _dialogs;
         private readonly IConnectionDialog? _connectionDialog;
@@ -80,6 +90,7 @@ namespace IwoBridge.Wpf.ViewModels
         /// <summary>Обычный режим: настройки, подключение по EWS.</summary>
         /// <param name="sourceSettings">Настройки подключения «Источник по EWS»; <c>null</c> — такого подключения нет.</param>
         /// <param name="outlook">Календари Outlook этого компьютера; <c>null</c> — источник «Outlook» недоступен.</param>
+        /// <param name="mailboxes">Добавленная почта для очистки; <c>null</c> — добавлять почту нельзя.</param>
         public MainViewModel(
             ISettingsStore settings,
             ITargetConnector connector,
@@ -88,8 +99,10 @@ namespace IwoBridge.Wpf.ViewModels
             Func<TimeSpan> localOffset,
             ISettingsStore? sourceSettings = null,
             IOutlookCalendars? outlook = null,
-            CopyServices? copyServices = null)
+            CopyServices? copyServices = null,
+            IMailboxStores? mailboxes = null)
         {
+            _mailboxStores = mailboxes;
             _settings = settings ?? throw new ArgumentNullException(nameof(settings));
             _connector = connector ?? throw new ArgumentNullException(nameof(connector));
             _dialogs = dialogs ?? throw new ArgumentNullException(nameof(dialogs));
@@ -100,6 +113,8 @@ namespace IwoBridge.Wpf.ViewModels
             Copy = NewCopy(dialogs, outlook, copyServices);
             EditConnectionCommand = new RelayCommand(EditTarget, () => !IsBusy);
             EditSourceCommand = new RelayCommand(EditSource, () => !IsBusy && _sourceSettings != null);
+            AddMailboxCommand = new RelayCommand(AddMailbox, () => !IsBusy && _mailboxStores != null);
+            RemoveMailboxCommand = new RelayCommand(RemoveMailbox, () => !IsBusy && CanRemoveMailbox);
             (PreviewCommand, StopCommand) = CurrentCommands();
             WatchBusy();
         }
@@ -113,6 +128,8 @@ namespace IwoBridge.Wpf.ViewModels
             Copy = NewCopy(dialogs, outlook, copyServices);
             EditConnectionCommand = new RelayCommand(() => { }, () => false);
             EditSourceCommand = new RelayCommand(() => { }, () => false);
+            AddMailboxCommand = new RelayCommand(() => { }, () => false);
+            RemoveMailboxCommand = new RelayCommand(() => { }, () => false);
             (PreviewCommand, StopCommand) = CurrentCommands();
             WatchBusy();
             ApplyTarget(demoSession ?? throw new ArgumentNullException(nameof(demoSession)));
@@ -125,6 +142,12 @@ namespace IwoBridge.Wpf.ViewModels
             Copy.Auto.Dispose();
             _session?.Dispose();
             _sourceSession?.Dispose();
+            foreach (CleanupChoice added in _added)
+            {
+                added.Session.Dispose();
+            }
+
+            _added.Clear();
         }
 
         // Автокопирование ждёт и очистку: одна операция с ящиками за раз на всё окно.
@@ -149,6 +172,18 @@ namespace IwoBridge.Wpf.ViewModels
 
         /// <summary>Подключение «Источник по EWS».</summary>
         public RelayCommand EditSourceCommand { get; }
+
+        /// <summary>«Добавить почту…»: ещё один ящик в списке очистки.</summary>
+        public RelayCommand AddMailboxCommand { get; }
+
+        /// <summary>«Убрать из списка»: выбранная добавленная почта.</summary>
+        public RelayCommand RemoveMailboxCommand { get; }
+
+        /// <summary>Можно ли добавлять почту (в демонстрационном режиме нельзя).</summary>
+        public bool CanAddMailboxes => _mailboxStores != null;
+
+        /// <summary>Выбрана добавленная почта — её можно убрать из списка.</summary>
+        public bool CanRemoveMailbox => _cleanupChoice?.IsAdded == true;
 
         public bool IsDemo => Cleanup.IsDemo;
 
@@ -199,6 +234,8 @@ namespace IwoBridge.Wpf.ViewModels
                 if (value != null && !IsBusy && SetProperty(ref _cleanupChoice, value))
                 {
                     Cleanup.SetSession(value.Session);
+                    OnPropertyChanged(nameof(CanRemoveMailbox));
+                    RemoveMailboxCommand.RaiseCanExecuteChanged();
                 }
             }
         }
@@ -231,6 +268,7 @@ namespace IwoBridge.Wpf.ViewModels
             _started = true;
 
             LoadOutlookCalendars();
+            LoadMailboxes();
             if (_sourceSettings != null && LoadSaved(_sourceSettings, out ConnectionProfile? sourceProfile, out CredentialSecret? sourceCredentials) is null
                 && sourceProfile != null && sourceCredentials != null)
             {
@@ -263,6 +301,129 @@ namespace IwoBridge.Wpf.ViewModels
         {
             string? loadError = LoadSaved(_settings!, out ConnectionProfile? profile, out CredentialSecret? credentials);
             Edit(_settings!, profile, credentials, loadError, "Приёмник: подключение по EWS", ApplyTarget);
+        }
+
+        /// <summary>
+        /// Запомненная почта открывается без сети, как приёмник. Почта, пароль которой удалили в Windows вручную,
+        /// без него не откроется — её файл убирается. Не прочитался файл или диспетчер учётных данных — ящик
+        /// пропускается и остаётся на диске до следующего запуска.
+        /// </summary>
+        private void LoadMailboxes()
+        {
+            IReadOnlyList<ISettingsStore> saved;
+            try
+            {
+                saved = _mailboxStores?.Saved() ?? Array.Empty<ISettingsStore>();
+            }
+#pragma warning disable CA1031 // Папка недоступна — список очистки без добавленной почты, программа работает.
+            catch (Exception)
+#pragma warning restore CA1031
+            {
+                return;
+            }
+
+            foreach (ISettingsStore store in saved)
+            {
+                if (LoadSaved(store, out ConnectionProfile? profile, out CredentialSecret? credentials) != null || profile is null)
+                {
+                    continue;
+                }
+
+                if (credentials is null)
+                {
+                    TryDelete(store, out _);
+                    continue;
+                }
+
+                ITargetSession session = _connector!.Open(profile, credentials);
+                _added.Add(new CleanupChoice(AddedLabel(session), session, isAdded: true, store: store));
+            }
+
+            RebuildCleanupChoices();
+        }
+
+        private void AddMailbox()
+        {
+            ISettingsStore store = _mailboxStores!.CreateNew();
+            var connection = new ConnectionViewModel(
+                store, _connector!, _dialogs, _localOffset(), null, null, null, "Почта для очистки: подключение по EWS",
+                keepProfileWithoutPassword: false);
+            if (!_connectionDialog!.Show(connection) || connection.OpenedSession is null)
+            {
+                return;
+            }
+
+            ITargetSession session = connection.OpenedSession;
+
+            // Этот ящик уже в списке — выбирается он, второй такой же не нужен.
+            CleanupChoice? same = _cleanupChoices.FirstOrDefault(
+                c => string.Equals(c.Session.TargetLabel, session.TargetLabel, StringComparison.OrdinalIgnoreCase));
+            if (same != null)
+            {
+                session.Dispose();
+                if (connection.Remember)
+                {
+                    TryDelete(store, out _);
+                }
+
+                CleanupChoice = same;
+                return;
+            }
+
+            var choice = new CleanupChoice(AddedLabel(session), session, isAdded: true, store: connection.Remember ? store : null);
+            _added.Add(choice);
+            RebuildCleanupChoices();
+            CleanupChoice = choice;
+        }
+
+        private void RemoveMailbox()
+        {
+            CleanupChoice? choice = _cleanupChoice;
+            if (choice is null || !choice.IsAdded)
+            {
+                return;
+            }
+
+            string question = "Ящик " + choice.Session.TargetLabel + " больше не будет в списке очистки."
+                + (choice.Store is null ? string.Empty : " Его сохранённый пароль будет удалён из Windows.")
+                + "\n\nКалендарь ящика не меняется.";
+            if (!_dialogs.Ask("Убрать почту из списка?", question, "Убрать") || IsBusy)
+            {
+                return;
+            }
+
+            string? error = null;
+            if (choice.Store != null && !TryDelete(choice.Store, out error))
+            {
+                Cleanup.ShowError(new Messages.UserMessage(
+                    "Почта не убрана из списка.",
+                    "Не удалось удалить её настройки. Проверьте права на папку программы и попробуйте ещё раз.",
+                    error));
+                return;
+            }
+
+            _added.Remove(choice);
+            RebuildCleanupChoices();
+            choice.Session.Dispose();
+        }
+
+        private static string AddedLabel(ITargetSession session) => "Почта: " + session.TargetLabel;
+
+        private static bool TryDelete(ISettingsStore store, out string? error)
+        {
+            try
+            {
+                store.Delete();
+                error = null;
+                return true;
+            }
+#pragma warning disable CA1031 // Файл занят, нет прав, диспетчер учётных данных недоступен — сообщается, программа работает.
+            catch (Exception ex)
+#pragma warning restore CA1031
+            {
+                error = ex.Message;
+                return false;
+            }
         }
 
         private void EditSource()
@@ -298,7 +459,8 @@ namespace IwoBridge.Wpf.ViewModels
             ISettingsStore settings, ConnectionProfile? profile, CredentialSecret? credentials, string? loadError, string title, Action<ITargetSession> apply)
         {
             var connection = new ConnectionViewModel(
-                settings, _connector!, _dialogs, _localOffset(), profile, credentials, loadError, title);
+                settings, _connector!, _dialogs, _localOffset(), profile, credentials, loadError, title,
+                credentials is null ? settings.LoadUserName() : null);
             if (_connectionDialog!.Show(connection) && connection.OpenedSession != null)
             {
                 apply(connection.OpenedSession);
@@ -346,6 +508,8 @@ namespace IwoBridge.Wpf.ViewModels
                 choices.Add(new CleanupChoice("Источник по EWS: " + _sourceSession.TargetLabel, _sourceSession));
             }
 
+            choices.AddRange(_added);
+
             ITargetSession? keep = _cleanupChoice?.Session;
             CleanupChoices = choices;
             CleanupChoice selected = choices.FirstOrDefault(c => ReferenceEquals(c.Session, keep)) ?? choices.FirstOrDefault()!;
@@ -358,6 +522,8 @@ namespace IwoBridge.Wpf.ViewModels
             {
                 Cleanup.SetSession(null);
                 OnPropertyChanged(nameof(CleanupChoice));
+                OnPropertyChanged(nameof(CanRemoveMailbox));
+                RemoveMailboxCommand.RaiseCanExecuteChanged();
             }
         }
 
@@ -410,6 +576,8 @@ namespace IwoBridge.Wpf.ViewModels
                     OnPropertyChanged(nameof(IsBusy));
                     EditConnectionCommand.RaiseCanExecuteChanged();
                     EditSourceCommand.RaiseCanExecuteChanged();
+                    AddMailboxCommand.RaiseCanExecuteChanged();
+                    RemoveMailboxCommand.RaiseCanExecuteChanged();
                 }
             }
 

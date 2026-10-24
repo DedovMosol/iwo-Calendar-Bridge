@@ -63,6 +63,8 @@ namespace IwoBridge.App.Configuration
 
         /// <summary>Поле отпечатка сертификата резервного адреса.</summary>
         public const string AlternatePinnedCertificateThumbprintField = "alternatePinnedCertificateThumbprint";
+        /// <summary>Необязательное поле учётной записи для входа — только когда пароль не запомнен.</summary>
+        public const string UserNameField = "userName";
 
         // Настоящий файл занимает около килобайта. Предел защищает от случайно выбранного огромного файла:
         // читать его целиком в память незачем.
@@ -158,6 +160,30 @@ namespace IwoBridge.App.Configuration
                 // указывает поле. В .NET Framework текст исключения дополняется строками «Имя параметра…» и
                 // «Фактическое значение…» — берётся только первая строка, чтобы значение не попало в сообщение.
                 throw FieldError(ex.ParamName, FirstLine(ex.Message), ex);
+            }
+        }
+
+        /// <summary>
+        /// Учётная запись для входа из файла (поле <see cref="UserNameField"/>); <c>null</c> — поля нет, файла нет или
+        /// он не читается. Ошибки файла сообщает <see cref="Load"/>, здесь они не повторяются.
+        /// </summary>
+        public static string? ReadUserName(string path)
+        {
+            try
+            {
+                var file = new FileInfo(Path.GetFullPath(path));
+                if (!file.Exists || file.Length > MaxFileBytes)
+                {
+                    return null;
+                }
+
+                string? user = Deserialize(File.ReadAllText(file.FullName, Encoding.UTF8)).UserName?.Trim();
+                return string.IsNullOrEmpty(user) ? null : user;
+            }
+            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException || ex is SecurityException
+                || ex is NotSupportedException || ex is ArgumentException || ex is ProfileLoadException)
+            {
+                return null;
             }
         }
 
@@ -265,7 +291,14 @@ namespace IwoBridge.App.Configuration
         /// вручную — несколько строковых полей; сериализатор .NET Framework экранировал бы «/» в адресе («https:\/\/»),
         /// и файл стало бы неудобно править руками.
         /// </summary>
-        public static string ToJson(ConnectionProfile profile)
+        public static string ToJson(ConnectionProfile profile) => ToJson(profile, null);
+
+        /// <summary>
+        /// То же, с учётной записью для входа (<paramref name="userName"/>). Она пишется в файл, только когда пароль
+        /// не запомнен: тогда в диспетчере учётных данных записи нет, а окно «Подключение» должно показать, под кем
+        /// входить. <c>null</c> — поле не пишется.
+        /// </summary>
+        public static string ToJson(ConnectionProfile profile, string? userName)
         {
             if (profile is null)
             {
@@ -281,7 +314,13 @@ namespace IwoBridge.App.Configuration
             Member(builder, UtcOffsetField, profile.TimeZone.OffsetText, last: false);
             Member(builder, PinnedCertificateThumbprintField, profile.PinnedCertificateThumbprint, last: false);
             Member(builder, AlternateEwsUrlField, profile.AlternateEwsUrl?.OriginalString, last: false);
-            Member(builder, AlternatePinnedCertificateThumbprintField, profile.AlternatePinnedCertificateThumbprint, last: true);
+            bool withUser = !string.IsNullOrWhiteSpace(userName);
+            Member(builder, AlternatePinnedCertificateThumbprintField, profile.AlternatePinnedCertificateThumbprint, last: !withUser);
+            if (withUser)
+            {
+                Member(builder, UserNameField, userName!.Trim(), last: true);
+            }
+
             builder.Append("}\r\n");
             return builder.ToString();
         }
@@ -295,14 +334,17 @@ namespace IwoBridge.App.Configuration
         /// <exception cref="UnauthorizedAccessException">Нет прав на запись в папку настроек.</exception>
         /// <exception cref="ArgumentException">Путь пуст или содержит недопустимые символы.</exception>
         /// <exception cref="NotSupportedException">Путь недопустимого вида (например, с двоеточием в середине).</exception>
-        public static void Save(string path, ConnectionProfile profile)
+        public static void Save(string path, ConnectionProfile profile) => Save(path, profile, null);
+
+        /// <summary>То же, с учётной записью для входа (см. <see cref="ToJson(ConnectionProfile, string?)"/>).</summary>
+        public static void Save(string path, ConnectionProfile profile, string? userName)
         {
             if (path is null || path.Trim().Length == 0)
             {
                 throw new ArgumentException("Нужен путь к файлу настроек.", nameof(path));
             }
 
-            string json = ToJson(profile);
+            string json = ToJson(profile, userName);
             string fullPath = Path.GetFullPath(path);
             string? directory = Path.GetDirectoryName(fullPath);
             if (!string.IsNullOrEmpty(directory))
@@ -428,6 +470,9 @@ namespace IwoBridge.App.Configuration
 
             [DataMember(Name = AlternatePinnedCertificateThumbprintField)]
             public string? AlternatePinnedCertificateThumbprint { get; set; }
+
+            [DataMember(Name = UserNameField)]
+            public string? UserName { get; set; }
         }
     }
 }

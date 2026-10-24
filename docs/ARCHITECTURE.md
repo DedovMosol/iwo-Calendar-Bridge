@@ -232,7 +232,7 @@ Exe `IwoCalendarBridge`, .NET Framework 4.8, Windows 7 SP1+, x86 и x64. Кор�
 | Слой | Типы | Назначение |
 |---|---|---|
 | Модели представления | `MainViewModel`, `CopyViewModel`, `AutoCopyViewModel`, `CleanupViewModel`, `ConnectionViewModel`, `DeletionConfirmationViewModel` | Вкладки, подключения, копирование, расписание, очистка, подтверждения |
-| Службы | `ITargetSession`, `ITargetConnector`, `ISettingsStore`, `ICopySettingsStore`, `IOutlookCalendars`, `IOneShotTimer`, `IAutostart`, `IDialogService` | Сеть, файлы, Outlook, таймер, реестр и окна за портами |
+| Службы | `ITargetSession`, `ITargetConnector`, `ISettingsStore`, `IMailboxStores`, `ICopySettingsStore`, `IOutlookCalendars`, `IOneShotTimer`, `IAutostart`, `IDialogService` | Сеть, файлы, Outlook, таймер, реестр и окна за портами |
 | Окна | `MainWindow`, `CopyPage`, `ConnectionWindow`, `ConfirmDeletionWindow`, `QuestionWindow`, `HelpWindow`, `TrayIcon` | Разметка, в коде окон только то, что требует WPF |
 | Вид | `FillPanel`, `WindowSizing`, `Theme`, `Announce` | Адаптивная страница, окна в пределах экрана, высокая контрастность, озвучивание |
 | Тексты | `ErrorMessages`, `UserMessage`, `RussianText` | «Что случилось, что делать, подробности» для каждого вида ошибки, числа, даты, склонения |

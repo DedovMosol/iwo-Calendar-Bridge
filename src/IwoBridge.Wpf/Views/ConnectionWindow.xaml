@@ -9,7 +9,9 @@
         FocusManager.FocusedElement="{Binding ElementName=ServerBox}">
     <!-- Окно «Подключение»: сервер (внутренний или внешний адрес — любой вид), необязательный резервный адрес того
          же сервера, ящик, учётная запись, пароль, часовой пояс. Проверяется каждый адрес, у каждого свой сертификат. «Проверить подключение» показывает результат и сертификат сервера; «Сохранить» сначала
-         проверяет, затем сохраняет: профиль — в config\connection.json, пароль — в диспетчер учётных данных Windows. -->
+         проверяет, затем сохраняет: профиль — в config\connection.json, пароль — в диспетчер учётных данных Windows, если
+         стоит галочка «Запомнить». -->
+
     <Grid Margin="20">
         <Grid.RowDefinitions>
             <RowDefinition Height="*" />
@@ -84,6 +86,9 @@
                                      AutomationProperties.Name="Пароль" />
                         <TextBlock Style="{StaticResource FieldErrorText}" Text="{Binding PasswordError}" />
                         <TextBlock Style="{StaticResource HintText}" Text="{Binding PasswordHint}" />
+                        <CheckBox Margin="0,8,0,0" Content="Запо_мнить" IsChecked="{Binding Remember}"
+                                  AutomationProperties.Name="Запомнить" AutomationProperties.AutomationId="RememberBox" />
+                        <TextBlock Style="{StaticResource HintText}" Margin="22,2,0,0" Text="{Binding RememberHint}" />
                     </StackPanel>
 
                     <Label Grid.Row="5" Content="_Часовой пояс" Target="{Binding ElementName=OffsetBox}" Padding="0,6,12,0" />

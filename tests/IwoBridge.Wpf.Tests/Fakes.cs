@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using IwoBridge.App.Cleanup;
@@ -162,15 +163,48 @@ namespace IwoBridge.Wpf.Tests
             return Profile;
         }
 
-        public void SaveProfile(ConnectionProfile profile)
+        public string? UserName { get; set; }
+
+        public bool Deleted { get; private set; }
+
+        public void SaveProfile(ConnectionProfile profile, string? userName)
         {
             ProfileSaves++;
             Profile = profile;
+            UserName = userName;
         }
+
+        public string? LoadUserName() => UserName;
 
         public CredentialSecret? LoadCredentials() => Credentials;
 
         public void SaveCredentials(CredentialSecret credentials) => Credentials = credentials;
+
+        public void DeleteCredentials() => Credentials = null;
+
+        public void Delete()
+        {
+            Deleted = true;
+            Profile = null;
+            UserName = null;
+            Credentials = null;
+        }
+    }
+
+    /// <summary>Добавленная почта в памяти.</summary>
+    internal sealed class MemoryMailboxes : IMailboxStores
+    {
+        public List<MemorySettings> Stores { get; } = new List<MemorySettings>();
+
+        public IReadOnlyList<ISettingsStore> Saved() =>
+            Stores.Where(s => s.Profile != null && !s.Deleted).ToList<ISettingsStore>();
+
+        public ISettingsStore CreateNew()
+        {
+            var store = new MemorySettings();
+            Stores.Add(store);
+            return store;
+        }
     }
 
     /// <summary>Подключение с заданным ответом проверки; запоминает, с каким профилем его вызывали.</summary>
@@ -195,7 +229,13 @@ namespace IwoBridge.Wpf.Tests
         {
             OpenedProfile = profile;
             OpenedCredentials = credentials;
-            return new TestSession(new InMemoryCalendar(Array.Empty<InMemoryEvent>()));
+            var session = new TestSession(new InMemoryCalendar(Array.Empty<InMemoryEvent>()));
+            if (profile.MailboxAddress != null)
+            {
+                session.TargetLabel = profile.MailboxAddress + " на mail.example.test";
+            }
+
+            return session;
         }
     }
 }

@@ -391,12 +391,18 @@ namespace IwoBridge.Wpf.Tests
 
             public ConnectionProfile? LoadProfile() => null;
 
-            public void SaveProfile(ConnectionProfile profile) => ProfileSaves++;
+            public void SaveProfile(ConnectionProfile profile, string? userName) => ProfileSaves++;
+
+            public string? LoadUserName() => null;
 
             public CredentialSecret? LoadCredentials() => null;
 
             public void SaveCredentials(CredentialSecret credentials) =>
                 throw new System.ComponentModel.Win32Exception(1312, "нет сеанса входа");
+
+            public void DeleteCredentials() => throw new System.ComponentModel.Win32Exception(1312, "нет сеанса входа");
+
+            public void Delete() => throw new System.ComponentModel.Win32Exception(1312, "нет сеанса входа");
         }
 
         private sealed class ThrowingConnector : ITargetConnector

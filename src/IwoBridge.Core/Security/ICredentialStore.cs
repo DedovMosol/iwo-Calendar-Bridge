@@ -11,6 +11,9 @@ namespace IwoBridge.Core.Security
 
         /// <summary>Сохраняет (или заменяет) учётные данные под именем цели.</summary>
         void Save(string target, CredentialSecret secret);
+
+        /// <summary>Удаляет учётные данные под именем цели. Записи нет — ничего не делает.</summary>
+        void Delete(string target);
     }
 
     /// <summary>
@@ -24,5 +27,8 @@ namespace IwoBridge.Core.Security
 
         /// <summary>Учётные данные подключения «Источник по EWS» (копирование с другого сервера).</summary>
         public const string EwsSource = "IwoCalendarBridge/ews-source";
+
+        /// <summary>Начало имени записи добавленной почты (для очистки); дальше — номер почты в списке программы.</summary>
+        public const string MailboxPrefix = "IwoCalendarBridge/mailbox/";
     }
 }

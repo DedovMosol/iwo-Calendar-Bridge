@@ -141,6 +141,9 @@ namespace IwoBridge.Wpf.ViewModels
             RefreshCommands();
         }
 
+        /// <summary>Сообщение об ошибке, случившейся вне операции очистки (например, со списком ящиков).</summary>
+        internal void ShowError(UserMessage message) => Error = message;
+
         // ---- Параметры ----
 
         public bool IsWholeCalendar

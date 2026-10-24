@@ -29,6 +29,21 @@ namespace IwoBridge.Ews.Tests
         }
 
         [Fact]
+        public void Delete_RemovesRecord_MissingIsNoOp()
+        {
+            CredentialSecret? read = TryOrSkip(() =>
+            {
+                _store.Delete(_target);
+                _store.Save(_target, new CredentialSecret("user", "secret"));
+                _store.Delete(_target);
+                _store.Delete(_target);
+                return _store.TryRead(_target);
+            });
+
+            Assert.Null(read);
+        }
+
+        [Fact]
         public void Missing_ReturnsNull()
         {
             Assert.Null(TryOrSkip(() => _store.TryRead(_target)));

@@ -102,6 +102,7 @@
                                         <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" MaxWidth="520" />
+                                        <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Style="{StaticResource SectionText}" Margin="0,0,24,0" VerticalAlignment="Center"
                                                Text="1. Что удалить" />
@@ -111,7 +112,20 @@
                                               ItemsSource="{Binding DataContext.CleanupChoices, RelativeSource={RelativeSource AncestorType=Window}}"
                                               SelectedItem="{Binding DataContext.CleanupChoice, RelativeSource={RelativeSource AncestorType=Window}}"
                                               AutomationProperties.Name="Какой ящик очищать" AutomationProperties.AutomationId="CleanupMailbox"
-                                              ToolTip="Календарь какого подключённого ящика очищать: приёмника или источника по EWS" />
+                                              ToolTip="Календарь какого ящика очищать: приёмника, источника по EWS или добавленной почты" />
+                                    <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,0,0"
+                                                IsEnabled="{Binding IsIdle}">
+                                        <Button Style="{StaticResource LinkButton}" Content="_Добавить почту…"
+                                                Command="{Binding DataContext.AddMailboxCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                Visibility="{Binding DataContext.CanAddMailboxes, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource VisibleWhen}}"
+                                                AutomationProperties.AutomationId="AddMailboxButton"
+                                                ToolTip="Подключить ещё один ящик по EWS и очищать его календарь" />
+                                        <Button Style="{StaticResource LinkButton}" Content="Убрать из списка" Margin="16,0,0,0"
+                                                Command="{Binding DataContext.RemoveMailboxCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                Visibility="{Binding DataContext.CanRemoveMailbox, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource VisibleWhen}}"
+                                                AutomationProperties.AutomationId="RemoveMailboxButton"
+                                                ToolTip="Убрать выбранную почту из списка. Календарь ящика не меняется." />
+                                    </StackPanel>
                                 </Grid>
 
                                 <StackPanel IsEnabled="{Binding IsIdle}">

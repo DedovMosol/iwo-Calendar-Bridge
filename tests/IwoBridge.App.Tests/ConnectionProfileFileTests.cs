@@ -51,6 +51,22 @@ namespace IwoBridge.App.Tests
         // ---- Разбор ----
 
         [Fact]
+        public void Save_WithUserName_ReadBack_ProfileUnchanged_WithoutUserName_Absent()
+        {
+            string path = Path.Combine(_directory, "connection.json");
+            var profile = new ConnectionProfile(new Uri("https://mail.example.test/EWS/Exchange.asmx"), null, TimeSpan.FromHours(3), null);
+
+            ConnectionProfileFile.Save(path, profile, " DOMAIN\\user ");
+            Assert.Equal("DOMAIN\\user", ConnectionProfileFile.ReadUserName(path));
+            Assert.Equal(profile.EwsUrl, ConnectionProfileFile.Load(path).EwsUrl);
+
+            ConnectionProfileFile.Save(path, profile, null);
+            Assert.Null(ConnectionProfileFile.ReadUserName(path));
+            Assert.DoesNotContain(ConnectionProfileFile.UserNameField, File.ReadAllText(path), StringComparison.Ordinal);
+            Assert.Null(ConnectionProfileFile.ReadUserName(Path.Combine(_directory, "missing.json")));
+        }
+
+        [Fact]
         public void Parse_Valid_AllFields()
         {
             ConnectionProfile profile = ConnectionProfileFile.Parse(ValidJson);
