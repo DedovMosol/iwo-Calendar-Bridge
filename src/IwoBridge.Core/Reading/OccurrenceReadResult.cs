@@ -7,7 +7,7 @@ namespace IwoBridge.Core.Reading
 {
     /// <summary>
     /// Результат раскрытия повторений в окне: сами повторения и признак полноты. Неполный результат
-    /// (усечение CalendarView, которое не удалось раздробить) запрещает обрезку (T15).
+    /// (усечение CalendarView, которое не удалось раздробить) запрещает обрезку.
     /// </summary>
     public sealed class OccurrenceReadResult
     {

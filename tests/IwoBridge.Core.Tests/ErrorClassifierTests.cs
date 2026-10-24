@@ -8,7 +8,7 @@ using Xunit;
 namespace IwoBridge.Core.Tests
 {
     /// <summary>
-    /// Классификация ошибок и повторы: аутентификация не повторяется никогда (T3), временные — с пределом и растущей
+    /// Классификация ошибок и повторы: аутентификация не повторяется никогда, временные — с пределом и растущей
     /// задержкой либо по подсказке сервера, постоянные и конфликт версии — без повторов; каждый вид классифицирован.
     /// </summary>
     public sealed class ErrorClassifierTests
@@ -130,7 +130,7 @@ namespace IwoBridge.Core.Tests
         [InlineData(OperationErrorKind.Unknown)]
         public async Task Retry_NonTransient_NeverRetried(OperationErrorKind kind)
         {
-            // Аутентификация — главное: повтор заблокировал бы учётную запись доменной политикой (T3).
+            // Аутентификация — главное: повтор заблокировал бы учётную запись доменной политикой.
             var waits = new List<TimeSpan>();
             int calls = 0;
 

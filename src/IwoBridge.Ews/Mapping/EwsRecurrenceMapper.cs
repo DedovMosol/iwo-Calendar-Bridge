@@ -7,7 +7,7 @@ using IwoBridge.Core.Sync;
 namespace IwoBridge.Ews.Mapping
 {
     /// <summary>
-    /// Правило повторения ядра ↔ объекты повторения EWS Managed API (PLAN.md §6.4). Чистые функции без сети — покрыты
+    /// Правило повторения ядра ↔ объекты повторения EWS Managed API. Чистые функции без сети — покрыты
     /// тестами в обе стороны. Окончание: «бессрочно» — <c>NeverEnds</c>, по дате — <c>EndDate</c>, по числу —
     /// <c>NumberOfOccurrences</c>.
     /// Правила «во второй вторник» в EWS задаются одним днём (<see cref="DayOfTheWeek"/>), включая особые значения

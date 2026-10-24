@@ -9,7 +9,7 @@ using static IwoBridge.Core.Tests.TestData;
 namespace IwoBridge.Core.Tests
 {
     /// <summary>
-    /// Семантика планирования очистки (PLAN.md §8): что удаляется целиком, что обрезается, что пропускается и
+    /// Семантика планирования очистки: что удаляется целиком, что обрезается, что пропускается и
     /// почему. Чистая функция — тесты без сети и без ин-мемори календаря.
     /// </summary>
     public sealed class CleanupPlannerTests

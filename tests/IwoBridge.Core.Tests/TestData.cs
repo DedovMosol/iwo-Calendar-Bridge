@@ -4,7 +4,7 @@ using IwoBridge.Core.Model;
 
 namespace IwoBridge.Core.Tests
 {
-    /// <summary>Синтетические данные для тестов — без каких-либо реальных значений (T36).</summary>
+    /// <summary>Синтетические данные для тестов — без каких-либо реальных значений.</summary>
     internal static class TestData
     {
         public static DateTime Utc(int year, int month, int day, int hour = 0, int minute = 0)

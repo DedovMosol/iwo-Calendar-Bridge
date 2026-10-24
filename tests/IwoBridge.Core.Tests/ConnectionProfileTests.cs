@@ -4,7 +4,7 @@ using Xunit;
 
 namespace IwoBridge.Core.Tests
 {
-    /// <summary>Правила профиля подключения. Адреса — только синтетические домены <c>example.test</c> (T36).</summary>
+    /// <summary>Правила профиля подключения. Адреса — только синтетические домены <c>example.test</c>.</summary>
     public sealed class ConnectionProfileTests
     {
         private static readonly Uri ValidUrl = new Uri("https://host.example.test/EWS/Exchange.asmx");

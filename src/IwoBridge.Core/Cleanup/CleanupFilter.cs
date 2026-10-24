@@ -2,8 +2,8 @@ namespace IwoBridge.Core.Cleanup
 {
     /// <summary>
     /// Что считать подлежащим удалению.
-    /// <see cref="AllEvents"/> — любые события календаря (режим R1: убрать наследие прежнего приложения).
-    /// <see cref="BridgeCopiesOnly"/> — только копии, созданные мостом (по метке); режим по умолчанию в R2 (T27).
+    /// <see cref="AllEvents"/> — любые события календаря в выбранном периоде.
+    /// <see cref="BridgeCopiesOnly"/> — только копии, созданные программой (по служебной метке).
     /// </summary>
     public enum CleanupFilter
     {

@@ -9,7 +9,7 @@ namespace IwoBridge.App.Tests
 {
     /// <summary>
     /// Загрузчик файла настроек <c>config\connection.json</c>: разбор JSON, понятные ошибки с именем поля, отсутствие
-    /// значений в тексте ошибок (T36) и контракт с поставляемым шаблоном. Данные — только синтетические.
+    /// значений в тексте ошибок и контракт с поставляемым шаблоном. Данные — только синтетические.
     /// </summary>
     public sealed class ConnectionProfileFileTests : IDisposable
     {

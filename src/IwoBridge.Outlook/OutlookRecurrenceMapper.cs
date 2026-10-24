@@ -26,7 +26,7 @@ namespace IwoBridge.Outlook
     }
 
     /// <summary>
-    /// Правило повторения Outlook → правило ядра (PLAN.md §6.4). Чистая функция — покрыта тестами без Outlook.
+    /// Правило повторения Outlook → правило ядра. Чистая функция — покрыта тестами без Outlook.
     ///  - olRecursDaily (0) с маской дней — это «каждый будний день»: Outlook хранит его как ежедневное с маской,
     ///    переносится еженедельным по этим дням;
     ///  - olRecursWeekly (1), olRecursMonthly (2), olRecursMonthNth (3), olRecursYearly (5), olRecursYearNth (6);

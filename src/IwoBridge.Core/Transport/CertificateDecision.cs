@@ -12,7 +12,7 @@ namespace IwoBridge.Core.Transport
         /// <summary>Отпечаток не совпал с закреплённым — отклонить.</summary>
         RejectPinMismatch,
 
-        /// <summary>Похоже на перехват HTTPS (антивирус/прокси пересоздал сертификат) — отклонить (T21).</summary>
+        /// <summary>Похоже на перехват HTTPS (антивирус/прокси пересоздал сертификат) — отклонить.</summary>
         RejectInterception,
 
         /// <summary>Первое подключение, цепочка недоверенная и не перехват — отклонить.</summary>

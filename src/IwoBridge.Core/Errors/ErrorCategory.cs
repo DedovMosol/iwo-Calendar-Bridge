@@ -9,7 +9,7 @@ namespace IwoBridge.Core.Errors
         /// <summary>Конфликт версий: перечитать элемент и повторить один раз.</summary>
         VersionConflict,
 
-        /// <summary>Аутентификация: повтор запрещён (риск блокировки учётки, T3).</summary>
+        /// <summary>Аутентификация: повтор запрещён (риск блокировки учётки).</summary>
         Authentication,
 
         /// <summary>Постоянная: повтор бессмыслен, показать пользователю.</summary>

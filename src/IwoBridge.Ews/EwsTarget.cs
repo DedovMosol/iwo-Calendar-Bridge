@@ -69,7 +69,7 @@ namespace IwoBridge.Ews
             var retry = new RetryPolicy(EwsErrorMapper.MapException, EwsErrorMapper.ServerBackOff);
             FolderId calendar = calendarFolder ?? EwsCalendarGateway.CalendarOf(profile.MailboxAddress);
 
-            // Чтение — в UTC; запись событий — в поясе календаря ящика (CalendarZones, T31). У обоих каналов те же
+            // Чтение — в UTC; запись событий — в поясе календаря ящика (CalendarZones). У обоих каналов те же
             // группы соединений адресов, поэтому и та же проверка сертификата.
             var read = new EwsChannel(
                 _endpoints.Select(e => factory.Create(profile.ForEndpoint(e.Settings), credentials, e.ConnectionGroup)).ToArray(), retry);

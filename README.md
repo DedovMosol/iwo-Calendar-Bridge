@@ -18,6 +18,8 @@
 
 </div>
 
+<div align="justify">
+
 ## Обзор
 
 iwo Calendar Bridge — WPF-клиент (.NET Framework 4.8) для двух операций с календарями Exchange:
@@ -296,7 +298,7 @@ IwoBridge.Wpf ──► IwoBridge.App ──► IwoBridge.Core
 - **Outlook** — `OutlookSession`, `OutlookSource`, STA-поток, маппинг правил повтора.
 - **Wpf** — MVVM без сторонних фреймворков, расписание, область уведомлений, справка.
 
-Подробно — [ARCHITECTURE.md](docs/ARCHITECTURE.md), решения — [DECISIONS.md](docs/DECISIONS.md).
+Подробно — [ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## 🛠️ Сборка и тесты
 
@@ -336,9 +338,9 @@ powershell -ExecutionPolicy Bypass -File build\package.ps1   # artifacts\iwo-Cal
 | Копирование: Outlook → EWS | Готово. Live-тест: общий календарь из Outlook (сотни событий, серии, вложения, оформление) → Exchange 2007 SP2, повторный план пуст |
 | Копирование: источник EWS | Готово, покрыто тестами маппинга, live-чтение проверено |
 | Автокопирование, область уведомлений, справка | Готово, покрыто тестами |
-| R3 — стабилизация | Длительные прогоны, сценарии отказов, приёмка |
+| Стабилизация | Длительные прогоны и приёмка на рабочих установках |
 
-План — [WORKPLAN.md](docs/WORKPLAN.md), изменения — [CHANGELOG.md](docs/CHANGELOG.md).
+Изменения — [CHANGELOG.md](docs/CHANGELOG.md).
 
 ## 🔒 Конфиденциальность
 
@@ -351,3 +353,5 @@ powershell -ExecutionPolicy Bypass -File build\package.ps1   # artifacts\iwo-Cal
 [GNU General Public License v3.0](LICENSE) © 2026 [DedovMosol](https://github.com/DedovMosol)
 
 EWS Managed API 2.2 — лицензия MIT (Microsoft).
+
+</div>

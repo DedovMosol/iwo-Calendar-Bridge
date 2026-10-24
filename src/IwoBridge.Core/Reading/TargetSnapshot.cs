@@ -8,7 +8,7 @@ namespace IwoBridge.Core.Reading
 {
     /// <summary>
     /// Снимок календаря приёмника: собранные элементы и вердикт о полноте. Разрушительные операции
-    /// (удаление) допустимы только при <see cref="IsAuthoritative"/> == true (T2, T30, T32).
+    /// (удаление) допустимы только при <see cref="IsAuthoritative"/> == true.
     /// </summary>
     public sealed class TargetSnapshot
     {
