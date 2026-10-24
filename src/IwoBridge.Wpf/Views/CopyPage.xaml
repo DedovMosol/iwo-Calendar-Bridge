@@ -19,7 +19,7 @@
                     <WrapPanel Margin="0,0,0,4">
                         <TextBlock Style="{StaticResource SectionText}" Text="1. Откуда и куда" Margin="0,0,20,4" VerticalAlignment="Center" />
                         <TextBlock VerticalAlignment="Center" Margin="0,0,0,4" TextWrapping="Wrap"
-                                   ToolTip="Приёмник — кнопка «Приёмник…» вверху окна. В нём меняются только копии, созданные этой программой; ваши события не трогаются.">
+                                   ToolTip="Приёмник — кнопка «Приёмник…» вверху окна. Программа работает только со своими копиями, ваши события остаются как есть.">
                             <Run Text="Куда:" Foreground="{DynamicResource MutedTextBrush}" /> <Run Text="{Binding TargetLabel, Mode=OneWay}" FontWeight="SemiBold" />
                         </TextBlock>
                     </WrapPanel>
@@ -319,7 +319,7 @@
                             </Grid.ColumnDefinitions>
                             <TextBlock Style="{StaticResource HintText}" Margin="0" VerticalAlignment="Center"
                                        Text="Выполняются только отмеченные строки. Участникам ничего не рассылается."
-                                       ToolTip="Встречи копируются простыми событиями, без участников и напоминаний; вложения и описание с картинками переносятся; ваши собственные события не трогаются." />
+                                       ToolTip="Встречи копируются простыми событиями, без участников и напоминаний. Вложения и описание с картинками переносятся. Ваши собственные события остаются как есть." />
                             <Button Grid.Column="1" Margin="16,0,0,0" VerticalAlignment="Center" Style="{StaticResource PrimaryButton}"
                                     Content="Скопировать _выбранное…" Command="{Binding CopyCommand}"
                                     AutomationProperties.AutomationId="CopyButton"

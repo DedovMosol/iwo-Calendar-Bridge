@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace IwoBridge.Core.Paging
@@ -97,7 +97,7 @@ namespace IwoBridge.Core.Paging
             if (failed > 0)
             {
                 return BatchDeleteOutcome.Failure(
-                    $"Частично удалено {accounted} из {requestedCount}; не удалено {failed} (например, {firstErrorCode}).",
+                    $"Частично удалено {accounted} из {requestedCount}, не удалено {failed} (например, {firstErrorCode}).",
                     accounted);
             }
 

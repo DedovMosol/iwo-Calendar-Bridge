@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -279,7 +279,7 @@ namespace IwoBridge.Wpf.ViewModels
                 string done = result.Done == 0 ? "изменений нет" : DescribeDone(result).TrimEnd('.').ToLower(RussianText.Culture);
                 return result.Failures.Count == 0
                     ? new AutoRunOutcome(done, isProblem: false)
-                    : new AutoRunOutcome(done + "; не удалось: " + RussianText.Number(result.Failures.Count), isProblem: true);
+                    : new AutoRunOutcome(done + ", не удалось: " + RussianText.Number(result.Failures.Count), isProblem: true);
             }
             catch (OperationCanceledException)
             {

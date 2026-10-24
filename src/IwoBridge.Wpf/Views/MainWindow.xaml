@@ -146,7 +146,7 @@
                                                      Margin="0,0,12,0" VerticalAlignment="Center"
                                                      ToolTip="Все события основного календаря ящика, включая ваши собственные" />
                                         <TextBlock Style="{StaticResource HintText}" Margin="0" VerticalAlignment="Center"
-                                                   Text="все события основного календаря, включая ваши; сначала — полный список" />
+                                                   Text="все события основного календаря, включая ваши, сначала будет показан полный список" />
                                     </WrapPanel>
                                 </StackPanel>
 
@@ -329,7 +329,7 @@
                                             <TextBlock Style="{StaticResource SectionText}" Text="3. Удалить:" Margin="0,2,16,2" VerticalAlignment="Center" />
                                             <RadioButton GroupName="Mode" IsChecked="{Binding HardDelete, Converter={StaticResource Not}}" Margin="0,4,24,4"
                                                          VerticalAlignment="Center"
-                                                         ToolTip="Элементы переносятся в папку «Удалённые» ящика; события можно вернуть перетаскиванием в календарь."
+                                                         ToolTip="Элементы переносятся в папку «Удалённые» ящика. Вернуть событие можно, перетащив его обратно в календарь."
                                                          Content="в папку «Удалённые» — можно вернуть" />
                                             <RadioButton GroupName="Mode" IsChecked="{Binding HardDelete}" Margin="0,4" VerticalAlignment="Center"
                                                          ToolTip="Элементы удаляются, минуя папку «Удалённые»: вернуть их из Outlook будет нельзя."

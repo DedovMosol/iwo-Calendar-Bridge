@@ -58,7 +58,7 @@
                                  AutomationProperties.AutomationId="AlternateServerBox" />
                         <TextBlock Style="{StaticResource FieldErrorText}" Text="{Binding AlternateServerError}" />
                         <TextBlock Style="{StaticResource HintText}"
-                                   Text="Необязательно. Второй адрес того же сервера — например, внешний, если основной внутренний. Программа перейдёт на него, только если основной недоступен по сети; при ошибке входа или сертификата — нет." />
+                                   Text="Необязательно. Второй адрес того же сервера — например, внешний, если основной внутренний. Программа переходит на него, когда основной недоступен по сети." />
                     </StackPanel>
 
                     <Label Grid.Row="2" Content="_Ящик" Target="{Binding ElementName=MailboxBox}" Padding="0,6,12,0" />
