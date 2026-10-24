@@ -1,0 +1,202 @@
+<Window x:Class="IwoBridge.Wpf.Views.ConnectionWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:views="clr-namespace:IwoBridge.Wpf.Views"
+        Title="Подключение к серверу"
+        Style="{StaticResource AppWindow}"
+        Width="680" SizeToContent="Height" MinWidth="520" MinHeight="360"
+        ResizeMode="CanResizeWithGrip" WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
+        FocusManager.FocusedElement="{Binding ElementName=ServerBox}">
+    <!-- Окно «Подключение»: сервер (внутренний или внешний адрес — любой вид), необязательный резервный адрес того
+         же сервера, ящик, учётная запись, пароль, часовой пояс. Проверяется каждый адрес, у каждого свой сертификат. «Проверить подключение» показывает результат и сертификат сервера; «Сохранить» сначала
+         проверяет, затем сохраняет: профиль — в config\connection.json, пароль — в диспетчер учётных данных Windows. -->
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <StackPanel>
+                <Border Style="{StaticResource ErrorBanner}"
+                        Visibility="{Binding HasLoadError, Converter={StaticResource VisibleWhen}}">
+                    <StackPanel>
+                        <TextBlock FontWeight="SemiBold" Foreground="{DynamicResource ErrorTextBrush}" TextWrapping="Wrap"
+                                   Text="Сохранённые настройки не прочитаны — заполните их заново." />
+                        <TextBlock TextWrapping="Wrap" Margin="0,4,0,0" Text="{Binding LoadError}" />
+                    </StackPanel>
+                </Border>
+
+                <Grid IsEnabled="{Binding IsIdle}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" MinWidth="170" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <Label Grid.Row="0" Content="_Сервер" Target="{Binding ElementName=ServerBox}" Padding="0,6,12,0" />
+                    <StackPanel Grid.Row="0" Grid.Column="1" Margin="0,0,0,12">
+                        <TextBox x:Name="ServerBox" Text="{Binding Server, UpdateSourceTrigger=PropertyChanged}"
+                                 AutomationProperties.Name="Сервер" AutomationProperties.AutomationId="ServerBox" />
+                        <TextBlock Style="{StaticResource FieldErrorText}" Text="{Binding ServerError}" />
+                        <TextBlock Style="{StaticResource HintText}"
+                                   Text="Внутренний или внешний адрес сервера Exchange: имя (mail.example.ru), IP-адрес, с портом через двоеточие или полный адрес EWS из Outlook." />
+                    </StackPanel>
+
+                    <Label Grid.Row="1" Content="Ре_зервный сервер" Target="{Binding ElementName=AlternateServerBox}" Padding="0,6,12,0" />
+                    <StackPanel Grid.Row="1" Grid.Column="1" Margin="0,0,0,12">
+                        <TextBox x:Name="AlternateServerBox" Text="{Binding AlternateServer, UpdateSourceTrigger=PropertyChanged}"
+                                 AutomationProperties.Name="Резервный сервер (необязательно)"
+                                 AutomationProperties.AutomationId="AlternateServerBox" />
+                        <TextBlock Style="{StaticResource FieldErrorText}" Text="{Binding AlternateServerError}" />
+                        <TextBlock Style="{StaticResource HintText}"
+                                   Text="Необязательно. Второй адрес того же сервера — например, внешний, если основной внутренний. Программа перейдёт на него, только если основной недоступен по сети; при ошибке входа или сертификата — нет." />
+                    </StackPanel>
+
+                    <Label Grid.Row="2" Content="_Ящик" Target="{Binding ElementName=MailboxBox}" Padding="0,6,12,0" />
+                    <StackPanel Grid.Row="2" Grid.Column="1" Margin="0,0,0,12">
+                        <TextBox x:Name="MailboxBox" Text="{Binding Mailbox, UpdateSourceTrigger=PropertyChanged}"
+                                 AutomationProperties.Name="Адрес ящика" />
+                        <TextBlock Style="{StaticResource FieldErrorText}" Text="{Binding MailboxError}" />
+                        <TextBlock Style="{StaticResource HintText}"
+                                   Text="Адрес почты ящика, календарь которого очищается. Пусто — ящик учётной записи, под которой вы входите." />
+                    </StackPanel>
+
+                    <Label Grid.Row="3" Content="_Учётная запись" Target="{Binding ElementName=UserBox}" Padding="0,6,12,0" />
+                    <StackPanel Grid.Row="3" Grid.Column="1" Margin="0,0,0,12">
+                        <TextBox x:Name="UserBox" Text="{Binding UserName, UpdateSourceTrigger=PropertyChanged}"
+                                 AutomationProperties.Name="Учётная запись" />
+                        <TextBlock Style="{StaticResource FieldErrorText}" Text="{Binding UserError}" />
+                        <TextBlock Style="{StaticResource HintText}" Text="ДОМЕН\пользователь или пользователь@домен." />
+                    </StackPanel>
+
+                    <Label Grid.Row="4" Content="Па_роль" Target="{Binding ElementName=PasswordInput}" Padding="0,6,12,0" />
+                    <StackPanel Grid.Row="4" Grid.Column="1" Margin="0,0,0,12">
+                        <PasswordBox x:Name="PasswordInput" PasswordChanged="OnPasswordChanged"
+                                     AutomationProperties.Name="Пароль" />
+                        <TextBlock Style="{StaticResource FieldErrorText}" Text="{Binding PasswordError}" />
+                        <TextBlock Style="{StaticResource HintText}" Text="{Binding PasswordHint}" />
+                    </StackPanel>
+
+                    <Label Grid.Row="5" Content="_Часовой пояс" Target="{Binding ElementName=OffsetBox}" Padding="0,6,12,0" />
+                    <StackPanel Grid.Row="5" Grid.Column="1" Margin="0,0,0,12">
+                        <ComboBox x:Name="OffsetBox" ItemsSource="{Binding OffsetOptions}" SelectedItem="{Binding Offset}"
+                                  DisplayMemberPath="Label" AutomationProperties.Name="Часовой пояс календаря" />
+                        <TextBlock Style="{StaticResource FieldErrorText}" Text="{Binding OffsetError}" />
+                        <TextBlock Style="{StaticResource HintText}"
+                                   Text="Пояс, в котором живёт календарь ящика. От него считаются границы периода очистки; переход на летнее время не учитывается." />
+                    </StackPanel>
+
+                    <TextBlock Grid.Row="6" Text="Сертификат" Margin="0,0,12,0" />
+                    <StackPanel Grid.Row="6" Grid.Column="1" Margin="0,0,0,8">
+                        <TextBlock TextWrapping="Wrap" Text="{Binding TrustText}" />
+                        <Button Style="{StaticResource LinkButton}" HorizontalAlignment="Left" Margin="0,4,0,0"
+                                Content="Забыть сертификат" Command="{Binding ForgetCertificateCommand}"
+                                Visibility="{Binding HasPinnedCertificate, Converter={StaticResource VisibleWhen}}"
+                                ToolTip="При следующем подключении сертификат сервера нужно будет подтвердить заново" />
+                    </StackPanel>
+                </Grid>
+
+                <!-- Итог проверки -->
+                <Border Visibility="{Binding HasStatus, Converter={StaticResource VisibleWhen}}">
+                    <Border.Style>
+                        <Style TargetType="Border" BasedOn="{StaticResource ErrorBanner}">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding StatusIsSuccess}" Value="True">
+                                    <Setter Property="Background" Value="{DynamicResource SuccessBackBrush}" />
+                                    <Setter Property="BorderBrush" Value="{DynamicResource SuccessLineBrush}" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding IsChecking}" Value="True">
+                                    <Setter Property="Background" Value="{DynamicResource InfoBackBrush}" />
+                                    <Setter Property="BorderBrush" Value="{DynamicResource InfoLineBrush}" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
+                    <StackPanel>
+                        <TextBlock FontWeight="SemiBold" TextWrapping="Wrap" views:Announce.Text="{Binding StatusTitle}"
+                                   AutomationProperties.LiveSetting="Polite" />
+                        <TextBlock TextWrapping="Wrap" Margin="0,4,0,0" Text="{Binding StatusHint}" />
+                        <Grid Margin="0,8,0,0" Visibility="{Binding IsChecking, Converter={StaticResource VisibleWhen}}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <ProgressBar Height="6" IsIndeterminate="True" VerticalAlignment="Center"
+                                         AutomationProperties.Name="Идёт проверка" />
+                            <Button Grid.Column="1" Margin="12,0,0,0" Content="Отменить проверку"
+                                    Command="{Binding CancelCheckCommand}" />
+                        </Grid>
+                        <Expander Header="Подробности для администратора" Margin="0,6,0,0"
+                                  Visibility="{Binding StatusDetails, Converter={StaticResource VisibleWhen}}">
+                            <TextBox IsReadOnly="True" TextWrapping="Wrap" Margin="0,4,0,0" BorderThickness="0" Background="Transparent"
+                                     Text="{Binding StatusDetails, Mode=OneWay}" />
+                        </Expander>
+                    </StackPanel>
+                </Border>
+
+                <!-- Сертификат сервера: чтобы решить, доверять ли ему, — сверьте отпечаток с администратором. -->
+                <Border Style="{StaticResource Card}" Visibility="{Binding HasCertificate, Converter={StaticResource VisibleWhen}}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" MinWidth="120" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <TextBlock Grid.ColumnSpan="2" Style="{StaticResource SectionText}" Text="Сертификат сервера" />
+                        <TextBlock Grid.Row="1" Text="Кому выдан" Foreground="{DynamicResource MutedTextBrush}" Margin="0,0,12,4" />
+                        <TextBox Grid.Row="1" Grid.Column="1" IsReadOnly="True" BorderThickness="0" Background="Transparent"
+                                 MinHeight="0" Padding="0" TextWrapping="Wrap" Text="{Binding CertificateSubject, Mode=OneWay}" />
+                        <TextBlock Grid.Row="2" Text="Кем выдан" Foreground="{DynamicResource MutedTextBrush}" Margin="0,0,12,4" />
+                        <TextBox Grid.Row="2" Grid.Column="1" IsReadOnly="True" BorderThickness="0" Background="Transparent"
+                                 MinHeight="0" Padding="0" TextWrapping="Wrap" Text="{Binding CertificateIssuer, Mode=OneWay}" />
+                        <TextBlock Grid.Row="3" Text="Действует" Foreground="{DynamicResource MutedTextBrush}" Margin="0,0,12,4" />
+                        <TextBlock Grid.Row="3" Grid.Column="1" TextWrapping="Wrap" Text="{Binding CertificateValidity}" />
+                        <TextBlock Grid.Row="4" Text="SHA-256" Foreground="{DynamicResource MutedTextBrush}" Margin="0,0,12,4" />
+                        <TextBox Grid.Row="4" Grid.Column="1" IsReadOnly="True" BorderThickness="0" Background="Transparent"
+                                 MinHeight="0" Padding="0" TextWrapping="Wrap" FontFamily="Consolas"
+                                 Text="{Binding CertificateSha256, Mode=OneWay}" AutomationProperties.Name="Отпечаток SHA-256" />
+                        <TextBlock Grid.Row="5" Text="SHA-1" Foreground="{DynamicResource MutedTextBrush}" Margin="0,0,12,4" />
+                        <TextBox Grid.Row="5" Grid.Column="1" IsReadOnly="True" BorderThickness="0" Background="Transparent"
+                                 MinHeight="0" Padding="0" TextWrapping="Wrap" FontFamily="Consolas"
+                                 Text="{Binding CertificateSha1, Mode=OneWay}" AutomationProperties.Name="Отпечаток SHA-1" />
+                        <Button Grid.Row="6" Grid.ColumnSpan="2" HorizontalAlignment="Left" Margin="0,10,0,0"
+                                Content="_Доверять этому сертификату" Command="{Binding TrustCertificateCommand}"
+                                Visibility="{Binding CanTrustCertificate, Converter={StaticResource VisibleWhen}}" />
+                    </Grid>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
+
+        <Grid Grid.Row="1" Margin="0,12,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <Button Content="_Проверить подключение" Command="{Binding CheckCommand}"
+                    AutomationProperties.AutomationId="CheckButton"
+                    ToolTip="Подключиться с этими данными и прочитать число событий календаря. Ничего не сохраняется и не меняется." />
+            <Button Grid.Column="2" Style="{StaticResource PrimaryButton}" Content="Со_хранить" IsDefault="True"
+                    Command="{Binding SaveCommand}" ToolTip="Проверить подключение и сохранить настройки" />
+            <Button Grid.Column="3" Margin="8,0,0,0" Content="Отмена" IsCancel="True" />
+        </Grid>
+    </Grid>
+</Window>

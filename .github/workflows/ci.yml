@@ -1,0 +1,95 @@
+# Непрерывная интеграция: сборка и все тесты на каждый push и pull request.
+#
+# Что проверяется:
+#   - восстановление пакетов строго по packages.lock.json (подмена версии = ошибка);
+#   - сборка Release без предупреждений в проектах с TreatWarningsAsErrors;
+#   - модульные, сценарные и архитектурные тесты (правила зависимостей между слоями).
+# Чего здесь нет и не будет: подключения к реальному серверу Exchange, файла config/connection.json и любых
+# данных установки (T36). Интеграционные тесты против живого сервера запускаются только вручную, локально.
+#
+# Почему Windows: целевой фреймворк — .NET Framework 4.8, тесты выполняются им же.
+# Действия закреплены на полный SHA коммита (рядом — версия): тег можно передвинуть, SHA — нет.
+# Обновление действия: взять SHA нового релиза и поменять его вместе с комментарием.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Токен репозитория — только на чтение: workflow ничего не публикует.
+permissions:
+  contents: read
+
+# Новый запуск для той же ветки отменяет устаревший — экономит очередь раннеров.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: "true"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+  # Английский вывод инструментов — читаемые логи независимо от языка образа раннера.
+  DOTNET_CLI_UI_LANGUAGE: en
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup .NET SDK 8
+        id: setup-dotnet
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 8.0.x
+          cache: true
+          cache-dependency-path: "**/packages.lock.json"
+
+      # На раннере предустановлены и более новые SDK; без global.json выбрался бы самый новый.
+      # Закрепляем ровно установленный выше SDK — тот же мажор, что у разработчика. В репозитории global.json
+      # нет намеренно: локально сборка идёт любым SDK 8+ (DECISIONS.md).
+      - name: Pin SDK for this run
+        shell: pwsh
+        run: dotnet new globaljson --sdk-version "${{ steps.setup-dotnet.outputs.dotnet-version }}" --force
+
+      - name: Restore (locked)
+        run: dotnet restore IwoBridge.sln --locked-mode
+
+      - name: Build
+        run: dotnet build IwoBridge.sln --configuration Release --no-restore -p:ContinuousIntegrationBuild=true
+
+      - name: Test
+        run: >-
+          dotnet test IwoBridge.sln --configuration Release --no-build
+          --logger trx --results-directory TestResults
+
+      # Две сборки программы по разрядности (x86 и x64), переносные папки и zip; разрядность exe проверяет сам скрипт.
+      - name: Package x86 and x64
+        shell: powershell
+        run: powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File build/package.ps1
+
+      - name: Upload distributions
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: iwo-Calendar-Bridge
+          path: artifacts/*.zip
+          if-no-files-found: error
+          retention-days: 30
+
+      # Результаты тестов — и при падении, чтобы разобрать причину без перезапуска.
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: test-results
+          path: TestResults/**/*.trx
+          if-no-files-found: warn
+          retention-days: 14

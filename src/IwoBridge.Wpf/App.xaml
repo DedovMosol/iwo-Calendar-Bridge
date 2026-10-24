@@ -1,0 +1,386 @@
+<Application x:Class="IwoBridge.Wpf.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:views="clr-namespace:IwoBridge.Wpf.Views"
+             ShutdownMode="OnMainWindowClose">
+    <!-- Общий вид всех окон: шрифт, цвета, кнопки, карточки, поля.
+         - Только системные шрифты и элементы, которые есть начиная с Windows 7 (без значков Segoe MDL2: значки
+           нарисованы фигурами Path).
+         - Цвета — с контрастом текста не ниже 4.5:1 (WCAG AA). Все цвета подключаются через DynamicResource: в режиме
+           высокой контрастности Windows App.Theme подменяет их системными, и окна перекрашиваются на лету.
+         - Плавность: наведение и нажатие на кнопки — короткая анимация прозрачности слоя (дёшево для видеокарты, без
+           перерасчёта разметки); тяжёлых эффектов (тени, размытие) нет — окна не теряют кадров даже на слабых машинах.
+         - Размеры шрифтов — целые: при режиме отрисовки Display дробные кегли размываются. -->
+    <Application.Resources>
+        <views:VisibleWhenConverter x:Key="VisibleWhen" />
+        <views:NotConverter x:Key="Not" />
+
+        <!-- Палитра. Имена — по назначению, а не по цвету: высокая контрастность заменяет значения, не имена. -->
+        <SolidColorBrush x:Key="TextBrush" Color="#1B1B1B" />
+        <SolidColorBrush x:Key="AccentBrush" Color="#0F6CBD" />
+        <SolidColorBrush x:Key="AccentTextBrush" Color="#FFFFFF" />
+        <SolidColorBrush x:Key="DangerBrush" Color="#B3261E" />
+        <SolidColorBrush x:Key="DisabledBackBrush" Color="#E0E0E0" />
+        <SolidColorBrush x:Key="DisabledTextBrush" Color="#6B6B6B" />
+        <SolidColorBrush x:Key="MutedTextBrush" Color="#5C5C5C" />
+        <SolidColorBrush x:Key="SurfaceBrush" Color="#FFFFFF" />
+        <SolidColorBrush x:Key="PageBrush" Color="#F3F3F3" />
+        <SolidColorBrush x:Key="HeaderBrush" Color="#FFFFFF" />
+        <SolidColorBrush x:Key="LineBrush" Color="#D6D6D6" />
+        <SolidColorBrush x:Key="InputBorderBrush" Color="#8A8A8A" />
+        <SolidColorBrush x:Key="FocusBrush" Color="#1B1B1B" />
+        <SolidColorBrush x:Key="HoverBackBrush" Color="#E5F1FB" />
+        <SolidColorBrush x:Key="ErrorTextBrush" Color="#A4262C" />
+        <SolidColorBrush x:Key="ErrorBackBrush" Color="#FDE7E9" />
+        <SolidColorBrush x:Key="ErrorLineBrush" Color="#F1BBBC" />
+        <SolidColorBrush x:Key="SuccessTextBrush" Color="#0E700E" />
+        <SolidColorBrush x:Key="SuccessBackBrush" Color="#DFF6DD" />
+        <SolidColorBrush x:Key="SuccessLineBrush" Color="#9FD89F" />
+        <SolidColorBrush x:Key="InfoBackBrush" Color="#EAF3FB" />
+        <SolidColorBrush x:Key="InfoLineBrush" Color="#B4D6FA" />
+        <SolidColorBrush x:Key="WarningBackBrush" Color="#FFF4CE" />
+        <SolidColorBrush x:Key="WarningLineBrush" Color="#F2D589" />
+        <SolidColorBrush x:Key="GridLineBrush" Color="#EBEBEB" />
+        <SolidColorBrush x:Key="RowAltBrush" Color="#FAFAFA" />
+
+        <!-- Задаётся каждому окну явно (Style="{StaticResource AppWindow}"): неявный стиль Window на окна-наследники
+             (MainWindow и другие) в WPF не распространяется. -->
+        <Style x:Key="AppWindow" TargetType="Window">
+            <Setter Property="Language" Value="ru-RU" />
+            <Setter Property="FontFamily" Value="Segoe UI" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+            <Setter Property="Background" Value="{DynamicResource PageBrush}" />
+            <Setter Property="UseLayoutRounding" Value="True" />
+            <Setter Property="SnapsToDevicePixels" Value="True" />
+            <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
+        </Style>
+
+        <Style x:Key="TitleText" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="20" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+
+        <Style x:Key="SectionText" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="16" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Margin" Value="0,0,0,8" />
+        </Style>
+
+        <Style x:Key="HintText" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource MutedTextBrush}" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Margin" Value="0,3,0,0" />
+        </Style>
+
+        <Style x:Key="FieldErrorText" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource ErrorTextBrush}" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Margin" Value="0,3,0,0" />
+            <Setter Property="Visibility" Value="{Binding Text, RelativeSource={RelativeSource Self}, Converter={StaticResource VisibleWhen}}" />
+        </Style>
+
+        <Style x:Key="Card" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource LineBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="Padding" Value="16" />
+            <Setter Property="Margin" Value="0,0,0,12" />
+        </Style>
+
+        <!-- Полосы сообщений: цвет по смыслу (ошибка, успех, сведения, предупреждение). -->
+        <Style x:Key="Banner" TargetType="Border">
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="Padding" Value="12,10" />
+            <Setter Property="Margin" Value="0,0,0,12" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+        <Style x:Key="ErrorBanner" TargetType="Border" BasedOn="{StaticResource Banner}">
+            <Setter Property="Background" Value="{DynamicResource ErrorBackBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource ErrorLineBrush}" />
+        </Style>
+        <Style x:Key="InfoBanner" TargetType="Border" BasedOn="{StaticResource Banner}">
+            <Setter Property="Background" Value="{DynamicResource InfoBackBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource InfoLineBrush}" />
+        </Style>
+        <Style x:Key="SuccessBanner" TargetType="Border" BasedOn="{StaticResource Banner}">
+            <Setter Property="Background" Value="{DynamicResource SuccessBackBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource SuccessLineBrush}" />
+        </Style>
+
+        <Style TargetType="ToolTip">
+            <Setter Property="MaxWidth" Value="420" />
+            <Setter Property="ContentTemplate">
+                <Setter.Value>
+                    <DataTemplate>
+                        <TextBlock Text="{Binding}" TextWrapping="Wrap" />
+                    </DataTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="TextBox">
+            <Setter Property="Padding" Value="6,4" />
+            <Setter Property="MinHeight" Value="32" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="BorderBrush" Value="{DynamicResource InputBorderBrush}" />
+        </Style>
+
+        <Style TargetType="PasswordBox">
+            <Setter Property="Padding" Value="6,4" />
+            <Setter Property="MinHeight" Value="32" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="BorderBrush" Value="{DynamicResource InputBorderBrush}" />
+        </Style>
+
+        <Style TargetType="ComboBox">
+            <Setter Property="MinHeight" Value="32" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+
+        <Style TargetType="RadioButton">
+            <Setter Property="Margin" Value="0,4" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+        </Style>
+
+        <Style TargetType="CheckBox">
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+        </Style>
+
+        <!-- Календарь поля даты: общий стиль кнопок (мин. ширина 96) не должен раздувать кнопки «‹ ›» и заголовок
+             месяца — внутри календаря кнопки остаются системными. -->
+        <Style TargetType="Calendar">
+            <Style.Resources>
+                <Style TargetType="Button" />
+            </Style.Resources>
+        </Style>
+
+        <!-- Поле даты: ввод с клавиатуры (дд.мм.гггг) или выбор в выпадающем календаре.
+             Собственный шаблон вместо стандартного: стандартный при шрифте больше системного обрезает дату («24.09.2»).
+             Шаблон состоит из именованных частей, которые ожидает DatePicker (PART_Root, PART_TextBox, PART_Button,
+             PART_Popup), поэтому ввод, проверка даты и календарь работают штатно. -->
+        <Style TargetType="DatePickerTextBox">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="DatePickerTextBox">
+                        <ScrollViewer x:Name="PART_ContentHost" VerticalAlignment="Center" Focusable="False"
+                                      HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Hidden" />
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="DatePicker">
+            <Setter Property="MinHeight" Value="32" />
+            <Setter Property="Padding" Value="6,2" />
+            <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource InputBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="IsTodayHighlighted" Value="True" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="SelectedDateFormat" Value="Short" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="DatePicker">
+                        <Border x:Name="Frame" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="3">
+                            <Grid x:Name="PART_Root">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <DatePickerTextBox x:Name="PART_TextBox" Grid.Column="0" Padding="{TemplateBinding Padding}"
+                                                   VerticalAlignment="Stretch" VerticalContentAlignment="Center"
+                                                   Foreground="{TemplateBinding Foreground}"
+                                                   Focusable="{TemplateBinding Focusable}" />
+                                <Button x:Name="PART_Button" Grid.Column="1" Width="32" MinWidth="0" MinHeight="0" Padding="0"
+                                        Focusable="False" Cursor="Hand" ToolTip="Выбрать в календаре (Alt+↓)"
+                                        AutomationProperties.Name="Выбрать в календаре">
+                                    <Button.Template>
+                                        <ControlTemplate TargetType="Button">
+                                            <Border x:Name="Back" Background="Transparent" CornerRadius="0,3,3,0">
+                                                <Path Width="16" Height="16" Stretch="Uniform" Fill="{DynamicResource MutedTextBrush}"
+                                                      Data="M2,3 H14 V14 H2 Z M3,6 V13 H13 V6 Z M4,1 H6 V4 H4 Z M10,1 H12 V4 H10 Z M5,8 H7 V10 H5 Z M9,8 H11 V10 H9 Z" />
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="Back" Property="Background" Value="{DynamicResource HoverBackBrush}" />
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Button.Template>
+                                </Button>
+                                <Popup x:Name="PART_Popup" Grid.Column="0" AllowsTransparency="True" Placement="Bottom"
+                                       PlacementTarget="{Binding ElementName=PART_TextBox}" StaysOpen="False" />
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                                <Setter TargetName="Frame" Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Frame" Property="Background" Value="{DynamicResource DisabledBackBrush}" />
+                                <Setter Property="Foreground" Value="{DynamicResource DisabledTextBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Анимации наведения и нажатия — общие для всех цветных и обычных кнопок (DRY). Анимируется только
+             прозрачность слоя поверх фона: это композиция на видеокарте, без перерасчёта разметки. -->
+        <Storyboard x:Key="HoverIn">
+            <DoubleAnimation Storyboard.TargetName="Overlay" Storyboard.TargetProperty="Opacity" To="0.10" Duration="0:0:0.12" />
+        </Storyboard>
+        <Storyboard x:Key="HoverOut">
+            <DoubleAnimation Storyboard.TargetName="Overlay" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.18" />
+        </Storyboard>
+
+        <!-- Обычная кнопка: светлая, с рамкой; удобный размер для мыши и пальца (не меньше 32 пикселей). -->
+        <Style TargetType="Button">
+            <Setter Property="Padding" Value="14,6" />
+            <Setter Property="MinWidth" Value="96" />
+            <Setter Property="MinHeight" Value="32" />
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+            <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource InputBorderBrush}" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="ToolTipService.ShowOnDisabled" Value="True" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Grid>
+                            <Border x:Name="Root" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="1" CornerRadius="4" />
+                            <Border x:Name="Overlay" Background="{DynamicResource TextBrush}" CornerRadius="4" Opacity="0" />
+                            <Border x:Name="Focus" BorderBrush="{DynamicResource FocusBrush}" BorderThickness="2" CornerRadius="4" Visibility="Collapsed" />
+                            <ContentPresenter Margin="{TemplateBinding Padding}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                              RecognizesAccessKey="True" />
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Trigger.EnterActions>
+                                    <BeginStoryboard Storyboard="{StaticResource HoverIn}" />
+                                </Trigger.EnterActions>
+                                <Trigger.ExitActions>
+                                    <BeginStoryboard Storyboard="{StaticResource HoverOut}" />
+                                </Trigger.ExitActions>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Overlay" Property="Opacity" Value="0.2" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Focus" Property="Visibility" Value="Visible" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource DisabledBackBrush}" />
+                                <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource DisabledBackBrush}" />
+                                <Setter Property="Foreground" Value="{DynamicResource DisabledTextBrush}" />
+                                <Setter Property="Cursor" Value="Arrow" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Цветная кнопка (основное действие). Цвет — Background; наведение и нажатие затемняют его слоем. -->
+        <Style x:Key="FilledButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Padding" Value="18,7" />
+            <Setter Property="MinWidth" Value="110" />
+            <Setter Property="MinHeight" Value="36" />
+            <Setter Property="Foreground" Value="{DynamicResource AccentTextBrush}" />
+            <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+
+        <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource FilledButton}" />
+
+        <!-- Разрушительное действие — красная кнопка, всегда с подтверждением. -->
+        <Style x:Key="DangerButton" TargetType="Button" BasedOn="{StaticResource FilledButton}">
+            <Setter Property="Background" Value="{DynamicResource DangerBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource DangerBrush}" />
+        </Style>
+
+        <!-- Кнопка-ссылка для второстепенных действий («последний месяц», «Забыть сертификат»): подчёркивание при
+             наведении, рамка при фокусе с клавиатуры. -->
+        <Style x:Key="LinkButton" TargetType="Button">
+            <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Padding" Value="2,1" />
+            <Setter Property="ToolTipService.ShowOnDisabled" Value="True" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Root" Background="Transparent" BorderBrush="Transparent" BorderThickness="1"
+                                CornerRadius="2" Padding="{TemplateBinding Padding}">
+                            <TextBlock x:Name="Label" Text="{TemplateBinding Content}" Foreground="{TemplateBinding Foreground}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Label" Property="TextDecorations" Value="Underline" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource FocusBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Foreground" Value="{DynamicResource DisabledTextBrush}" />
+                                <Setter Property="Cursor" Value="Arrow" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Текст ячейки: длинная тема обрезается многоточием, целиком — во всплывающей подсказке. -->
+        <Style x:Key="TrimmedCell" TargetType="TextBlock">
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Padding" Value="4,0" />
+            <Setter Property="ToolTip" Value="{Binding Text, RelativeSource={RelativeSource Self}}" />
+        </Style>
+
+        <Style x:Key="PlainCell" TargetType="TextBlock">
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Padding" Value="4,0" />
+        </Style>
+
+        <!-- Список предпросмотра: только чтение, виртуализация строк — тысячи строк листаются без задержек.
+             Копирование (Ctrl+C) — только выделенных строк, с заголовком. -->
+        <Style TargetType="DataGrid">
+            <Setter Property="AutoGenerateColumns" Value="False" />
+            <Setter Property="IsReadOnly" Value="True" />
+            <Setter Property="CanUserSortColumns" Value="False" />
+            <Setter Property="CanUserReorderColumns" Value="False" />
+            <Setter Property="CanUserResizeRows" Value="False" />
+            <Setter Property="CanUserResizeColumns" Value="True" />
+            <Setter Property="HeadersVisibility" Value="Column" />
+            <Setter Property="GridLinesVisibility" Value="Horizontal" />
+            <Setter Property="HorizontalGridLinesBrush" Value="{DynamicResource GridLineBrush}" />
+            <Setter Property="AlternatingRowBackground" Value="{DynamicResource RowAltBrush}" />
+            <Setter Property="RowHeight" Value="28" />
+            <Setter Property="SelectionMode" Value="Extended" />
+            <Setter Property="SelectionUnit" Value="FullRow" />
+            <Setter Property="EnableRowVirtualization" Value="True" />
+            <Setter Property="EnableColumnVirtualization" Value="True" />
+            <Setter Property="VirtualizingPanel.IsVirtualizing" Value="True" />
+            <Setter Property="VirtualizingPanel.VirtualizationMode" Value="Recycling" />
+            <Setter Property="VirtualizingPanel.ScrollUnit" Value="Pixel" />
+            <Setter Property="ScrollViewer.CanContentScroll" Value="True" />
+            <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+            <Setter Property="RowBackground" Value="{DynamicResource SurfaceBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource LineBrush}" />
+            <Setter Property="ClipboardCopyMode" Value="IncludeHeader" />
+        </Style>
+    </Application.Resources>
+</Application>

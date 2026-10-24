@@ -1,0 +1,22 @@
+<Project>
+
+  <!-- Общие настройки всех проектов решения (DRY). Специфика — в самих .csproj. -->
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Deterministic>true</Deterministic>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <NeutralLanguage>ru-RU</NeutralLanguage>
+  </PropertyGroup>
+
+  <!-- Воспроизводимость зависимостей: каждый проект хранит packages.lock.json с точными версиями и хэшами
+       всех пакетов, включая транзитивные. Файлы коммитятся вместе с кодом.
+       - Обновили пакет в .csproj → выполнить `dotnet restore IwoBridge.sln` и закоммитить изменившиеся lock-файлы.
+       - CI восстанавливает с `dotnet restore - -locked-mode` (два дефиса подряд; в XML-комментарии их писать нельзя): расхождение с lock-файлом = ошибка сборки, а не
+         тихая подмена версии. -->
+  <PropertyGroup>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+  </PropertyGroup>
+
+</Project>

@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Адаптер приёмника: единственная граница с сетью EWS. Interop с не-nullable библиотекой, поэтому
+       предупреждения не возводятся в ошибки (в отличие от ядра). -->
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <AssemblyName>IwoBridge.Ews</AssemblyName>
+    <RootNamespace>IwoBridge.Ews</RootNamespace>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.Exchange.WebServices" Version="2.2.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\IwoBridge.Core\IwoBridge.Core.csproj" />
+  </ItemGroup>
+
+  <!-- Тесты видят внутренний процессный обработчик сертификатов (TlsTrustRegistry). -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="IwoBridge.Ews.Tests" />
+  </ItemGroup>
+
+</Project>

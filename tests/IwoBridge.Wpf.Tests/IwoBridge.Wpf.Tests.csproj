@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Тесты моделей представления окон: шаги экрана очистки, окно «Подключение», подтверждение удаления, тексты
+       сообщений. Без сервера: календарь — ин-мемори, подключение и диалоги — подставные. Тесты разметки строят
+       настоящие окна в отдельном потоке окон за пределами экрана (UiThread). -->
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <!-- Типы WPF нужны тестам разметки окон (UiLayoutTests): окна строятся по-настоящему, за пределами экрана. -->
+    <UseWPF>true</UseWPF>
+    <IsPackable>false</IsPackable>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <AssemblyName>IwoBridge.Wpf.Tests</AssemblyName>
+    <RootNamespace>IwoBridge.Wpf.Tests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\IwoBridge.Wpf\IwoBridge.Wpf.csproj" />
+  </ItemGroup>
+
+  <!-- Тесты — в основном домене процесса: поток окон UiThread живёт до конца процесса, а выгрузка отдельного
+       домена с работающим потоком окон роняет процесс тестов. -->
+  <ItemGroup>
+    <Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

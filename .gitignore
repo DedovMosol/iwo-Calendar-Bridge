@@ -1,0 +1,18 @@
+# Сборка
+bin/
+obj/
+.vs/
+*.user
+
+# Данные организации и секреты — только локально, не коммитятся (PLAN.md §0, T36)
+config/connection.json
+config/*.local.json
+secrets/
+
+# Локальные артефакты прогонов. Манифесты удаляемого содержат темы событий — только локально (PRIVACY.md).
+*.log
+manifests/
+TestResults/
+
+# Готовые сборки (build\package.ps1)
+artifacts/

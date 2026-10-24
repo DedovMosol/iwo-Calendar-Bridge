@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Приложение с окнами (WPF) и корень композиции: здесь собираются профиль, учётные данные, адаптер EWS и
+       сценарии. Модели представления (ViewModels) не используют типы WPF — тестируются без окна
+       (tests\IwoBridge.Wpf.Tests). Типов EWS Managed API здесь нет: адаптер доступен только через EwsTarget
+       (проверяет архитектурный тест). Запуск без сервера: IwoCalendarBridge.exe с ключом demo (см. App.xaml.cs).
+       Две сборки по разрядности (x86 и x64) делает build\package.ps1. -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <AssemblyName>IwoCalendarBridge</AssemblyName>
+    <RootNamespace>IwoBridge.Wpf</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <Product>iwo Calendar Bridge</Product>
+    <Title>iwo Calendar Bridge</Title>
+    <!-- Две разрядности (build\package.ps1 собирает обе). Для exe под .NET Framework SDK выводит идентификатор среды
+         из PlatformTarget (x86 → win7-x86, x64 → win7-x64); обе цели должны быть восстановлены заранее и записаны в
+         packages.lock.json. «win7» — нижняя поддерживаемая версия Windows, как и у самой программы. -->
+    <RuntimeIdentifiers>win7-x86;win7-x64</RuntimeIdentifiers>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\IwoBridge.Core\IwoBridge.Core.csproj" />
+    <ProjectReference Include="..\IwoBridge.App\IwoBridge.App.csproj" />
+    <ProjectReference Include="..\IwoBridge.Ews\IwoBridge.Ews.csproj" />
+    <ProjectReference Include="..\IwoBridge.InMemory\IwoBridge.InMemory.csproj" />
+  </ItemGroup>
+
+  <!-- Тесты моделей представления видят внутренние типы приложения. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="IwoBridge.Wpf.Tests" />
+  </ItemGroup>
+
+</Project>

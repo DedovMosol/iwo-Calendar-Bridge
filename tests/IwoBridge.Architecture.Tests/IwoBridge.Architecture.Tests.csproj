@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Архитектурные тесты: правила зависимостей между слоями проверяются по фактическим ссылкам собранных
+       сборок (DependencyRulesTests). Ссылается на все продуктовые проекты, чтобы получить их сборки. -->
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <AssemblyName>IwoBridge.Architecture.Tests</AssemblyName>
+    <RootNamespace>IwoBridge.Architecture.Tests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\IwoBridge.Core\IwoBridge.Core.csproj" />
+    <ProjectReference Include="..\..\src\IwoBridge.App\IwoBridge.App.csproj" />
+    <ProjectReference Include="..\..\src\IwoBridge.InMemory\IwoBridge.InMemory.csproj" />
+    <ProjectReference Include="..\..\src\IwoBridge.Ews\IwoBridge.Ews.csproj" />
+    <ProjectReference Include="..\..\src\IwoBridge.Wpf\IwoBridge.Wpf.csproj" />
+  </ItemGroup>
+
+</Project>

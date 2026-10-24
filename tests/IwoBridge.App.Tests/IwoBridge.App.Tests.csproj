@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Тесты слоя сценариев: очистка поверх ин-мемори календаря, манифест удаляемого, загрузчик настроек. -->
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <AssemblyName>IwoBridge.App.Tests</AssemblyName>
+    <RootNamespace>IwoBridge.App.Tests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\IwoBridge.App\IwoBridge.App.csproj" />
+    <ProjectReference Include="..\..\src\IwoBridge.InMemory\IwoBridge.InMemory.csproj" />
+  </ItemGroup>
+
+  <!-- Поставляемый шаблон настроек — в выходную папку тестов: контрактный тест проверяет, что шаблон
+       разбирается загрузчиком и содержит все поля (ConnectionProfileLoaderTests). Копия не правится:
+       это ссылка на файл из config\. Реальный connection.json сюда не попадает никогда. -->
+  <ItemGroup>
+    <None Include="..\..\config\connection.example.json" Link="TestData\connection.example.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Слой сценариев: композиция портов и чистой логики ядра. Без Outlook/EWS/сети. -->
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <AssemblyName>IwoBridge.App</AssemblyName>
+    <RootNamespace>IwoBridge.App</RootNamespace>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\IwoBridge.Core\IwoBridge.Core.csproj" />
+  </ItemGroup>
+
+</Project>
