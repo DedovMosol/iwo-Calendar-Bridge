@@ -42,7 +42,8 @@ namespace IwoBridge.App.Copy
             SyncPlan plan,
             IReadOnlyDictionary<string, SourceItem> sourceItems,
             IReadOnlyList<string> warnings,
-            ISet<string> matchingOwn)
+            ISet<string> matchingOwn,
+            IReadOnlyList<EventCategory>? categories = null)
         {
             WindowStartUtc = windowStartUtc;
             WindowEndUtc = windowEndUtc;
@@ -50,8 +51,15 @@ namespace IwoBridge.App.Copy
             SourceItems = sourceItems;
             Warnings = warnings;
             MatchingOwn = matchingOwn;
+            Categories = categories ?? Array.Empty<EventCategory>();
             Recommended = plan.Actions.Where(a => !IsDuplicateOfOwn(a)).ToArray();
         }
+
+        /// <summary>
+        /// Категории событий периода, которые получат копии (<see cref="EventCategories.Used"/>), с цветом в источнике, если
+        /// он известен. Цвет в приёмнике задаёт его собственный список категорий — подсказка, какие категории там завести.
+        /// </summary>
+        public IReadOnlyList<EventCategory> Categories { get; }
 
         /// <summary>
         /// События, для которых план создаёт копию, хотя в приёмнике уже есть такое же собственное событие человека
@@ -233,7 +241,7 @@ namespace IwoBridge.App.Copy
             ISet<string> matchingOwn = creates.Length == 0
                 ? new HashSet<string>(StringComparer.Ordinal)
                 : OwnEventMatcher.Duplicates(creates, await _target.ReadOwnEventsAsync(start, end, cancellationToken).ConfigureAwait(false));
-            return new CopyPreview(start, end, plan, items, read.Warnings, matchingOwn);
+            return new CopyPreview(start, end, plan, items, read.Warnings, matchingOwn, EventCategories.Used(items.Values, read.CategoryColors));
         }
 
         /// <summary>

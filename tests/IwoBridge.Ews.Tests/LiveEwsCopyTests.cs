@@ -78,6 +78,15 @@ namespace IwoBridge.Ews.Tests
                 int total = await target.CheckAsync(CancellationToken.None);
                 _output.WriteLine($"Элементов в календаре: {total}; событий за год до и после сегодня: {read.Items.Count}; серий: {read.Items.Count(i => i.Recurrence != null)}; неполное: {read.IncompleteReason ?? "нет"}");
                 Assert.Null(read.IncompleteReason);
+
+                // «Всё время»: весь календарь.
+                (DateTime allFrom, DateTime allTo) = profile.TimeZone.PeriodFromLocalDates(
+                    IwoBridge.Core.Time.TargetTimeZone.MinPeriodDate, IwoBridge.Core.Time.TargetTimeZone.MaxPeriodDate);
+                SourceRead all = await target.Source.ReadAsync(allFrom, allTo, Array.Empty<string>(), null, CancellationToken.None);
+                int withCategories = all.Items.Count(i => i.Categories.Count > 0 || i.Exceptions.Any(e => e.Categories?.Count > 0));
+                _output.WriteLine($"За всё время: событий {all.Items.Count}, с категориями {withCategories}; неполное: {all.IncompleteReason ?? "нет"}");
+                Assert.Null(all.IncompleteReason);
+                Assert.True(all.Items.Count >= read.Items.Count);
             }
         }
 
@@ -90,25 +99,32 @@ namespace IwoBridge.Ews.Tests
 
             byte[] file = Encoding.UTF8.GetBytes("live attachment");
             byte[] second = Encoding.UTF8.GetBytes("second live attachment");
+            // Категории — названиями; «;» внутри названия проверяет, что список переносится точно, а не строкой.
             var single = new SourceItem("live-single", "Live: одиночное", "Зал 1", "Описание события", At(0, 6), At(0, 7),
-                attachments: new[] { new SyncAttachment("заметка.txt", file.Length), new SyncAttachment("вторая.txt", second.Length) });
-            var allDay = new SourceItem("live-allday", "Live: весь день", null, null, LocalMidnight(1), LocalMidnight(2), isAllDay: true, busy: FreeBusy.OutOfOffice);
+                attachments: new[] { new SyncAttachment("заметка.txt", file.Length), new SyncAttachment("вторая.txt", second.Length) },
+                categories: new[] { "Красная категория", "Live; категория" });
+            SourceItem AllDay(params string[] categories) => new SourceItem(
+                "live-allday", "Live: весь день", null, null, LocalMidnight(1), LocalMidnight(2), isAllDay: true, busy: FreeBusy.OutOfOffice, categories: categories);
+            SourceItem allDay = AllDay("Live отпуск");
             var secret = new SourceItem("live-private", "Live: личное содержимое", "Скрытое место", "Скрытое описание", At(1, 9), At(1, 10),
                 sensitivity: ItemSensitivity.Private);
             DateTime seriesStart = At(2, 8);
             DateTime localStart = seriesStart + offset;
             var rule = new RecurrenceRule(RecurrencePattern.Weekly, 1, localStart.Date, occurrences: 4,
                 days: (WeekDays)(1 << (int)localStart.DayOfWeek));
-            SourceItem Series(string subjectOfThird) => new SourceItem(
+            // Категории серии; у третьего повторения — свои (или те же, что у серии, — null).
+            SourceItem Series(string subjectOfThird, string[]? categoriesOfThird) => new SourceItem(
                 "live-series", "Live: серия", "Зал 2", null, seriesStart, seriesStart.AddHours(1),
                 recurrence: rule, seriesEndUtc: seriesStart.AddDays(21).AddHours(1),
                 exceptions: new[]
                 {
                     new SourceException(seriesStart.AddDays(7), true),
-                    new SourceException(seriesStart.AddDays(14), false, seriesStart.AddDays(14).AddHours(1), seriesStart.AddDays(14).AddHours(2), subjectOfThird),
-                    // Обычная серия, но одно повторение личное: в копию — только время, тема «Личное».
+                    new SourceException(
+                        seriesStart.AddDays(14), false, seriesStart.AddDays(14).AddHours(1), seriesStart.AddDays(14).AddHours(2), subjectOfThird, categories: categoriesOfThird),
+                    // Обычная серия, но одно повторение личное: в копию — только время, тема «Личное», без категорий серии.
                     new SourceException(seriesStart.AddDays(21), false, seriesStart.AddDays(21), seriesStart.AddDays(21).AddHours(1), "Live: тайное", "Тайный зал", "Тайное описание", isPrivate: true),
-                });
+                },
+                categories: new[] { "Live серия" });
 
             // Описание с оформлением — RTF, как его отдаёт Outlook (MapiRtf).
             // Кодировка шрифта — \fcharset204 (кириллица), как у Outlook: без неё байты читаются как западноевропейские.
@@ -119,7 +135,7 @@ namespace IwoBridge.Ews.Tests
             source.Put(single, new[] { new AttachmentContent("заметка.txt", file), new AttachmentContent("вторая.txt", second) });
             source.Put(allDay);
             source.Put(secret);
-            source.Put(Series("Live: перенесённое"));
+            source.Put(Series("Live: перенесённое", new[] { "Синяя категория" }));
             source.Put(rich);
 
             var runner = new CopyRunner(source, target.CopyTarget, EwsTarget.StopsBatch);
@@ -142,7 +158,9 @@ namespace IwoBridge.Ews.Tests
             foreach (SourceItem item in written.Items.OrderBy(i => i.StartUtc))
             {
                 _output.WriteLine($"{item.Subject} | {item.StartUtc:u} – {item.EndUtc:u} | весь день: {item.IsAllDay} | {item.Busy} | {item.Sensitivity} | "
-                    + $"правило: {item.Recurrence?.Canonical ?? "-"} | исключений: {item.Exceptions.Count} | вложения: {string.Join(", ", item.Attachments.Select(a => a.Name))}");
+                    + $"правило: {item.Recurrence?.Canonical ?? "-"} | исключений: {item.Exceptions.Count} | вложения: {string.Join(", ", item.Attachments.Select(a => a.Name))} | "
+                    + $"категории: {string.Join(" / ", item.Categories)}"
+                    + string.Concat(item.Exceptions.Where(e => !e.IsDeleted).Select(e => $" | повторение {e.OriginalStartUtc:u}: {(e.Categories is null ? "как у серии" : string.Join(" / ", e.Categories))}")));
             }
 
             SourceItem gotSingle = written.Items.Single(i => i.Subject == single.Subject);
@@ -151,6 +169,7 @@ namespace IwoBridge.Ews.Tests
             Assert.Equal("Зал 1", gotSingle.Location);
             Assert.Contains("Описание события", gotSingle.Body);
             Assert.Equal(new[] { "вторая.txt", "заметка.txt" }, gotSingle.Attachments.Select(a => a.Name).OrderBy(n => n, StringComparer.Ordinal));
+            Assert.Equal(new[] { "Красная категория", "Live; категория" }, gotSingle.Categories);
             IReadOnlyList<AttachmentContent> gotFiles = await target.WrittenCopies.LoadAttachmentsAsync(gotSingle, ct);
             Assert.Equal(second, gotFiles.Single(f => f.Name == "вторая.txt").Content);
             AttachmentContent[] gotFile = gotFiles.Where(f => f.Name == "заметка.txt").ToArray();
@@ -166,6 +185,7 @@ namespace IwoBridge.Ews.Tests
             Assert.Equal(allDay.StartUtc, gotAllDay.StartUtc);
             Assert.Equal(allDay.EndUtc, gotAllDay.EndUtc);
             Assert.Equal(FreeBusy.OutOfOffice, gotAllDay.Busy);
+            Assert.Equal(new[] { "Live отпуск" }, gotAllDay.Categories);
 
             SourceItem gotSecret = written.Items.Single(i => i.Sensitivity == ItemSensitivity.Private);
             Assert.Equal(CopyRules.PrivateSubject, gotSecret.Subject);
@@ -178,31 +198,56 @@ namespace IwoBridge.Ews.Tests
             Assert.Equal(4, gotSeries.Recurrence.Occurrences ?? 0);
             Assert.Equal(seriesStart, gotSeries.StartUtc);
             Assert.Contains(gotSeries.Exceptions, e => e.IsDeleted && e.OriginalStartUtc == seriesStart.AddDays(7));
-            Assert.Contains(gotSeries.Exceptions, e => !e.IsDeleted && e.Subject == "Live: перенесённое" && e.StartUtc == seriesStart.AddDays(14).AddHours(1));
+            SourceException gotThird = gotSeries.Exceptions.Single(e => !e.IsDeleted && e.Subject == "Live: перенесённое");
+            Assert.Equal(seriesStart.AddDays(14).AddHours(1), gotThird.StartUtc);
+            Assert.Equal(new[] { "Live серия" }, gotSeries.Categories);
+            Assert.Equal(new[] { "Синяя категория" }, gotThird.Categories);
             SourceException gotPrivate = gotSeries.Exceptions.Single(e => e.OriginalStartUtc == seriesStart.AddDays(21));
             Assert.True(gotPrivate.IsPrivate);
             Assert.Equal(CopyRules.PrivateSubject, gotPrivate.Subject);
             Assert.DoesNotContain("Тайн", (gotPrivate.Location ?? string.Empty) + (gotPrivate.Body ?? string.Empty));
+            Assert.Null(gotPrivate.Categories); // свои категории скрытого повторения не перенесены, у него категории серии
 
-            // 4. Правка и удаление в источнике: одна копия перезаписывается, одна удаляется.
-            source.Put(new SourceItem("live-single", "Live: одиночное (изменено)", "Зал 3", "Новое описание", At(0, 6), At(0, 8)));
+            // 4. Правка и удаление в источнике: две копии перезаписываются (у одной категории сменились, у другой сняты),
+            // одна удаляется.
+            source.Put(new SourceItem("live-single", "Live: одиночное (изменено)", "Зал 3", "Новое описание", At(0, 6), At(0, 8), categories: new[] { "Live проект" }));
+            source.Put(AllDay());
             source.Remove("live-private");
-            await Apply(runner, from, to, ct, expectUpdate: 1, expectDelete: 1);
+            await Apply(runner, from, to, ct, expectUpdate: 2, expectDelete: 1);
 
-            // 5. Изменённое исключение серии: серия пересоздаётся.
-            source.Put(Series("Live: перенесённое ещё раз"));
+            // 5. Изменённое исключение серии: серия пересоздаётся; у повторения теперь категории серии.
+            source.Put(Series("Live: перенесённое ещё раз", null));
             await Apply(runner, from, to, ct, expectUpdate: 1);
 
             CopyPreview last = await runner.PreviewAsync(from, to, false, null, ct);
             Assert.True(last.Plan.IsEmpty, Describe(last.Plan));
+
+            // «Всё время» — весь допустимый диапазон дат: тот же итог, сервер такой период принимает.
+            (DateTime allFrom, DateTime allTo) = IwoBridge.Core.Time.TargetTimeZone.FromOffset(offset)
+                .PeriodFromLocalDates(IwoBridge.Core.Time.TargetTimeZone.MinPeriodDate, IwoBridge.Core.Time.TargetTimeZone.MaxPeriodDate);
+            CopyPreview allTime = await runner.PreviewAsync(allFrom, allTo, false, null, ct);
+            Assert.True(allTime.Plan.IsEmpty, Describe(allTime.Plan));
+            Assert.Equal(4, allTime.Plan.UnchangedCount);
             SourceRead final = await target.WrittenCopies.ReadAsync(from, to, Array.Empty<string>(), null, ct);
             Assert.Equal(
                 new[] { "Live: весь день", "Live: одиночное (изменено)", "Live: оформление", "Live: серия" },
                 final.Items.Select(i => i.Subject).OrderBy(s => s, StringComparer.Ordinal));
-            Assert.Contains(final.Items.Single(i => i.Subject == "Live: серия").Exceptions, e => e.Subject == "Live: перенесённое ещё раз");
+            Assert.Equal(new[] { "Live проект" }, final.Items.Single(i => i.Subject == "Live: одиночное (изменено)").Categories);
+            Assert.Empty(final.Items.Single(i => i.Subject == "Live: весь день").Categories);
+            SourceException finalThird = final.Items.Single(i => i.Subject == "Live: серия").Exceptions.Single(e => e.Subject == "Live: перенесённое ещё раз");
+            Assert.Null(finalThird.Categories); // те же, что у серии
+
+            // 6. У повторения в источнике категории сняты, у серии остались: снять их у одного повторения сервер не даёт —
+            // копия записана с замечанием, следующий запуск её не трогает.
+            source.Put(Series("Live: без категорий", Array.Empty<string>()));
+            CopyResult cleared = await Apply(runner, from, to, ct, expectUpdate: 1);
+            string remark = Assert.Single(cleared.Remarks);
+            Assert.Contains("остались категории серии", remark);
+            CopyPreview afterRemark = await runner.PreviewAsync(from, to, false, null, ct);
+            Assert.True(afterRemark.Plan.IsEmpty, Describe(afterRemark.Plan));
         }
 
-        private async Task Apply(CopyRunner runner, DateTime from, DateTime to, CancellationToken ct, int expectCreate = 0, int expectUpdate = 0, int expectDelete = 0)
+        private async System.Threading.Tasks.Task<CopyResult> Apply(CopyRunner runner, DateTime from, DateTime to, CancellationToken ct, int expectCreate = 0, int expectUpdate = 0, int expectDelete = 0)
         {
             CopyPreview preview = await runner.PreviewAsync(from, to, false, null, ct);
             _output.WriteLine("План: " + Describe(preview.Plan));
@@ -214,6 +259,7 @@ namespace IwoBridge.Ews.Tests
             Assert.Equal(expectCreate, result.Created);
             Assert.Equal(expectUpdate, result.Updated);
             Assert.Equal(expectDelete, result.Deleted);
+            return result;
         }
 
         private static string Describe(SyncPlan plan) => string.Join(", ", plan.Actions.Select(a => a.Kind + " " + a.SourceId)) + $" (без изменений {plan.UnchangedCount})";

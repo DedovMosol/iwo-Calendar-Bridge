@@ -38,6 +38,7 @@ namespace IwoBridge.Ews
             ItemSchema.Body,
             ItemSchema.Attachments,
             ItemSchema.Sensitivity,
+            ItemSchema.Categories,
             AppointmentSchema.Location,
             AppointmentSchema.Start,
             AppointmentSchema.End,
@@ -52,7 +53,7 @@ namespace IwoBridge.Ews
         };
 
         private static readonly PropertySet OccurrenceProperties = new PropertySet(
-            BasePropertySet.IdOnly, ItemSchema.Subject, ItemSchema.Body, ItemSchema.Sensitivity, AppointmentSchema.Location)
+            BasePropertySet.IdOnly, ItemSchema.Subject, ItemSchema.Body, ItemSchema.Sensitivity, ItemSchema.Categories, AppointmentSchema.Location)
         {
             RequestedBodyType = BodyType.Text,
         };
@@ -292,6 +293,7 @@ namespace IwoBridge.Ews
             a.TryGetProperty(AppointmentSchema.IsAllDayEvent, out bool allDay);
             a.TryGetProperty(AppointmentSchema.LegacyFreeBusyStatus, out LegacyFreeBusyStatus busy);
             a.TryGetProperty(ItemSchema.Sensitivity, out Sensitivity sensitivity);
+            IReadOnlyList<string> categories = Categories(a);
             var attachments = new List<SyncAttachment>();
             string? warning = null;
             if (a.TryGetProperty(ItemSchema.Attachments, out AttachmentCollection files) && files != null)
@@ -337,7 +339,8 @@ namespace IwoBridge.Ews
                         string b = changed.TryGetProperty(ItemSchema.Body, out MessageBody mb) ? mb?.Text ?? string.Empty : string.Empty;
                         exceptions.Add(new SourceException(
                             TimeMapper.ToUtc(occurrence.OriginalStart), false, TimeMapper.ToUtc(occurrence.Start), TimeMapper.ToUtc(occurrence.End), s, l, b,
-                            isPrivate: occurrenceSensitivity == Sensitivity.Private || occurrenceSensitivity == Sensitivity.Confidential));
+                            isPrivate: occurrenceSensitivity == Sensitivity.Private || occurrenceSensitivity == Sensitivity.Confidential,
+                            categories: EventCategories.OfOccurrence(Categories(changed), categories)));
                     }
                 }
             }
@@ -356,9 +359,19 @@ namespace IwoBridge.Ews
                 seriesEnd,
                 exceptions,
                 attachments,
-                a.TryGetProperty(MapiProperties.RtfCompressed, out byte[] rtf) ? rtf : null);
+                a.TryGetProperty(MapiProperties.RtfCompressed, out byte[] rtf) ? rtf : null,
+                categories);
             return new Mapped(item, warning);
         }
+
+        /// <summary>
+        /// Категории события — названия (EWS отдаёт их с Exchange 2007). Цветов здесь нет: они в списке категорий ящика,
+        /// а его Exchange 2007 по EWS не отдаёт.
+        /// </summary>
+        private static IReadOnlyList<string> Categories(Appointment appointment) =>
+            appointment.TryGetProperty(ItemSchema.Categories, out StringList categories) && categories != null
+                ? EventCategories.Normalize(categories)
+                : Array.Empty<string>();
 
         private sealed class Mapped
         {

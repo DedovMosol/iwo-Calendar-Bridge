@@ -14,12 +14,33 @@ namespace IwoBridge.Core.Sync
         /// Что прочитано не совсем точно, но чтение от этого не стало неполным — например, повторение серии, которое
         /// источник не открывает: оно в копию не попадает. Показывается человеку в предпросмотре.
         /// </param>
-        public SourceRead(IEnumerable<SourceItem> items, string? incompleteReason = null, IEnumerable<string>? warnings = null)
+        /// <param name="categoryColors">
+        /// Цвета категорий из списка категорий источника по названию; <c>null</c> — источник их не сообщает (сервер
+        /// Exchange 2007 по EWS списка категорий не отдаёт).
+        /// </param>
+        public SourceRead(
+            IEnumerable<SourceItem> items,
+            string? incompleteReason = null,
+            IEnumerable<string>? warnings = null,
+            IReadOnlyDictionary<string, CategoryColor>? categoryColors = null)
         {
             Items = (items ?? throw new ArgumentNullException(nameof(items))).ToArray();
             IncompleteReason = incompleteReason;
             Warnings = (warnings ?? Array.Empty<string>()).ToArray();
+            var colors = new Dictionary<string, CategoryColor>(StringComparer.OrdinalIgnoreCase);
+            foreach (KeyValuePair<string, CategoryColor> pair in categoryColors ?? new Dictionary<string, CategoryColor>())
+            {
+                if (!string.IsNullOrWhiteSpace(pair.Key) && !colors.ContainsKey(pair.Key.Trim()))
+                {
+                    colors.Add(pair.Key.Trim(), pair.Value);
+                }
+            }
+
+            CategoryColors = colors;
         }
+
+        /// <summary>Цвета категорий источника по названию (без учёта регистра); пусто — неизвестны.</summary>
+        public IReadOnlyDictionary<string, CategoryColor> CategoryColors { get; }
 
         public IReadOnlyList<string> Warnings { get; }
 

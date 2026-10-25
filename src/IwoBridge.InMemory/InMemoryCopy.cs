@@ -36,6 +36,9 @@ namespace IwoBridge.InMemory
         /// <summary>Сколько раз читались вложения (проверка: только для того, что пишется).</summary>
         public int AttachmentLoads { get; private set; }
 
+        /// <summary>Цвета категорий источника по названию (как список категорий ящика); <c>null</c> — неизвестны.</summary>
+        public IReadOnlyDictionary<string, CategoryColor>? CategoryColors { get; set; }
+
         /// <summary>Добавить или заменить событие — имитация правки в источнике.</summary>
         public void Put(SourceItem item, IReadOnlyList<AttachmentContent>? attachments = null)
         {
@@ -76,7 +79,7 @@ namespace IwoBridge.InMemory
             }
 
             progress?.Report(found.Length);
-            return Task.FromResult(new SourceRead(found, IncompleteReason));
+            return Task.FromResult(new SourceRead(found, IncompleteReason, categoryColors: CategoryColors));
         }
 
         public Task<IReadOnlyList<AttachmentContent>> LoadAttachmentsAsync(SourceItem item, CancellationToken cancellationToken)

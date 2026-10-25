@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using IwoBridge.App.History;
+using IwoBridge.Core.Time;
 using IwoBridge.Wpf.Messages;
 
 namespace IwoBridge.Wpf.ViewModels
@@ -12,11 +13,21 @@ namespace IwoBridge.Wpf.ViewModels
     /// </summary>
     internal static class OperationHistory
     {
-        /// <summary>Период для журнала: «01.10.2026 – 31.12.2026».</summary>
-        public static string Period(DateTime? first, DateTime? last) =>
-            first.HasValue && last.HasValue
-                ? first.Value.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture) + " – " + last.Value.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture)
-                : string.Empty;
+        /// <summary>Подпись периода «всё время» — на экране, в журнале и в консоли.</summary>
+        public const string AllTime = "всё время";
+
+        /// <summary>Период для журнала: «01.10.2026 – 31.12.2026»; весь допустимый диапазон дат — «всё время».</summary>
+        public static string Period(DateTime? first, DateTime? last)
+        {
+            if (!first.HasValue || !last.HasValue)
+            {
+                return string.Empty;
+            }
+
+            return first.Value.Date == TargetTimeZone.MinPeriodDate && last.Value.Date == TargetTimeZone.MaxPeriodDate
+                ? AllTime
+                : first.Value.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture) + " – " + last.Value.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture);
+        }
 
         /// <summary>Подробности записи: текст итога по строкам и сообщение об ошибке (с подсказкой и сведениями для администратора).</summary>
         public static IEnumerable<string> Details(string? resultText, UserMessage? error)

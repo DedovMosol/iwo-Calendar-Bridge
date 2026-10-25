@@ -84,7 +84,16 @@ namespace IwoBridge.Wpf.Services
     public sealed class DemoSources : IOutlookCalendars
     {
         /// <summary>Выдуманный рабочий календарь — общий для списка «Outlook» и источника «по EWS» демонстрации.</summary>
-        public static readonly InMemorySource Work = new InMemorySource("Петрова Анна Сергеевна — Общие календари (демонстрация)", Seed(DateTime.Today));
+        public static readonly InMemorySource Work = new InMemorySource("Петрова Анна Сергеевна — Общие календари (демонстрация)", Seed(DateTime.Today))
+        {
+            CategoryColors = new Dictionary<string, CategoryColor>
+            {
+                ["Красная категория"] = CategoryColor.Red,
+                ["Бюджет"] = CategoryColor.DarkGreen,
+                ["Подрядчики"] = CategoryColor.Orange,
+                ["Обучение"] = CategoryColor.Purple,
+            },
+        };
 
         public bool IsAvailable => true;
 
@@ -109,6 +118,7 @@ namespace IwoBridge.Wpf.Services
         {
             DateTime At(int day, int hour) => DateTime.SpecifyKind(today.AddDays(day).AddHours(hour - 3), DateTimeKind.Utc);
             string[] subjects = { "Планёрка отдела", "Совещание по бюджету", "Встреча с подрядчиком", "Разбор заявок", "Обучение", "Отчёт за неделю" };
+            string[]?[] categories = { null, new[] { "Бюджет" }, new[] { "Подрядчики" }, null, new[] { "Обучение" }, new[] { "Красная категория" } };
             for (int i = 0; i < 36; i++)
             {
                 int day = -14 + i;
@@ -118,12 +128,14 @@ namespace IwoBridge.Wpf.Services
                     "Переговорная " + (i % 3 + 1),
                     "Повестка: пункты 1–3.",
                     At(day, 9 + i % 6),
-                    At(day, 10 + i % 6));
+                    At(day, 10 + i % 6),
+                    categories: categories[i % categories.Length]);
             }
 
             yield return new SourceItem(
                 "DEMO-SERIES", "Еженедельная сводка", "Зал 2", null, At(-7, 11), At(-7, 12),
-                recurrence: new RecurrenceRule(RecurrencePattern.Weekly, 1, today.AddDays(-7), days: (WeekDays)(1 << (int)today.AddDays(-7).DayOfWeek)));
+                recurrence: new RecurrenceRule(RecurrencePattern.Weekly, 1, today.AddDays(-7), days: (WeekDays)(1 << (int)today.AddDays(-7).DayOfWeek)),
+                categories: new[] { "Отчётность" });
             yield return new SourceItem(
                 "DEMO-PRIVATE", "Врач", "Поликлиника", "Анализы", At(2, 15), At(2, 16), sensitivity: ItemSensitivity.Private);
             yield return new SourceItem(

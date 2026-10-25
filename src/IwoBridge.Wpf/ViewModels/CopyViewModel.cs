@@ -56,6 +56,7 @@ namespace IwoBridge.Wpf.ViewModels
 
         private DateTime? _periodStart;
         private DateTime? _periodEnd;
+        private bool _allTime;
         private bool _allowMassDelete;
         private string? _validationError;
         private CopyPreview? _preview;
@@ -104,6 +105,7 @@ namespace IwoBridge.Wpf.ViewModels
             _savedOwner = saved.OutlookOwner;
             _daysBack = saved.DaysBack;
             _daysForward = saved.DaysForward;
+            _allTime = saved.AllTime;
             (DateTime first, DateTime last) = saved.Window(_today());
             _periodStart = first;
             _periodEnd = last;
@@ -125,6 +127,8 @@ namespace IwoBridge.Wpf.ViewModels
             SelectNoneCommand = new RelayCommand(() => Select(false), () => HasPreview && !_isBusy);
             SetRecentCommand = new RelayCommand(() => SetPeriod(_today().AddMonths(-1), _today().AddMonths(3)), () => !_isBusy);
             SetThisYearCommand = new RelayCommand(() => SetPeriod(new DateTime(_today().Year, 1, 1), new DateTime(_today().Year, 12, 31)), () => !_isBusy);
+            SetAllTimeCommand = new RelayCommand(() => IsAllTime = true, () => !_isBusy && !_allTime);
+            ChooseDatesCommand = new RelayCommand(() => IsAllTime = false, () => !_isBusy && _allTime);
             Auto = new AutoCopyViewModel(timer ?? new InertTimer(), autostart, RunScheduledAsync, SaveSettings, saved.AutoCopy, saved.IntervalMinutes);
         }
 
@@ -326,7 +330,8 @@ namespace IwoBridge.Wpf.ViewModels
                 _daysBack,
                 _daysForward,
                 _foundShared.Any(f => f.Key == _outlookCalendar?.Key) ? _ownerOfFound : _savedOwner,
-                _outlookCalendar?.Key ?? _savedCalendarKey);
+                _outlookCalendar?.Key ?? _savedCalendarKey,
+                _allTime);
         }
 
         /// <summary>Источник и приёмник — один ящик: копия в самого себя (только по EWS; в демонстрации ящик один).</summary>
@@ -405,6 +410,12 @@ namespace IwoBridge.Wpf.ViewModels
 
         public RelayCommand SetThisYearCommand { get; }
 
+        /// <summary>Период — «всё время» (<see cref="IsAllTime"/>).</summary>
+        public RelayCommand SetAllTimeCommand { get; }
+
+        /// <summary>Вернуться от «всего времени» к датам (прежние дни назад и вперёд от сегодня).</summary>
+        public RelayCommand ChooseDatesCommand { get; }
+
         // ---- Приёмник и источник ----
 
         public bool HasTarget => _target != null;
@@ -456,11 +467,32 @@ namespace IwoBridge.Wpf.ViewModels
 
         // ---- Период ----
 
+        /// <summary>
+        /// Период — «всё время»: все события календаря, прошлые и будущие, в пределах дат, которые принимает Exchange. Поля
+        /// дат тогда скрыты, а дни назад и вперёд остаются прежними: выбор дат или другого периода возвращает к ним.
+        /// </summary>
+        public bool IsAllTime
+        {
+            get => _allTime;
+            set
+            {
+                if (!_isBusy && value != _allTime)
+                {
+                    SwitchAllTime(value);
+                }
+            }
+        }
+
         public DateTime? PeriodStart
         {
             get => _periodStart;
             set
             {
+                if (value?.Date != _periodStart)
+                {
+                    LeaveAllTime(); // дата, выбранная человеком, — уже не «всё время»
+                }
+
                 if (SetProperty(ref _periodStart, value?.Date))
                 {
                     if (value.HasValue)
@@ -479,6 +511,11 @@ namespace IwoBridge.Wpf.ViewModels
             get => _periodEnd;
             set
             {
+                if (value?.Date != _periodEnd)
+                {
+                    LeaveAllTime();
+                }
+
                 if (SetProperty(ref _periodEnd, value?.Date))
                 {
                     if (value.HasValue)
@@ -544,6 +581,14 @@ namespace IwoBridge.Wpf.ViewModels
             ? null
             : string.Join("\n", _preview.Warnings.Take(10).Select(w => "• " + w))
               + (_preview.Warnings.Count > 10 ? "\n• …и ещё " + RussianText.Number(_preview.Warnings.Count - 10) : string.Empty);
+
+        /// <summary>Категории, которые получат копии, с образцом цвета в источнике (<see cref="CopyPreview.Categories"/>).</summary>
+        public IReadOnlyList<CategoryRow> Categories { get; private set; } = Array.Empty<CategoryRow>();
+
+        public bool HasCategories => _preview != null && _preview.Categories.Count > 0;
+
+        /// <summary>Заголовок подсказки о категориях: сколько их и откуда у копии цвет.</summary>
+        public string CategoriesHeader => _preview is null ? string.Empty : CopyTexts.CategoriesHeader(_preview.Categories.Count);
 
         public string? ConflictText => _preview is null || _preview.Plan.ConflictingSourceIds.Count == 0
             ? null
@@ -904,8 +949,32 @@ namespace IwoBridge.Wpf.ViewModels
 
         private void SetPeriod(DateTime start, DateTime end)
         {
+            LeaveAllTime();
             PeriodStart = start;
             PeriodEnd = end;
+        }
+
+        /// <summary>
+        /// Включить или выключить «всё время»: на экране — границы нового периода (весь допустимый диапазон или прежние
+        /// дни назад и вперёд от сегодня), предпросмотр сбрасывается, выбор запоминается.
+        /// </summary>
+        private void SwitchAllTime(bool allTime)
+        {
+            _allTime = allTime;
+            (DateTime first, DateTime last) = CurrentSettings().Window(_today());
+            ShowPeriod(first, last);
+            OnPropertyChanged(nameof(IsAllTime));
+            Invalidate();
+            SaveSettings();
+            Refresh();
+        }
+
+        private void LeaveAllTime()
+        {
+            if (_allTime)
+            {
+                SwitchAllTime(false);
+            }
         }
 
         private void Select(bool selected)
@@ -998,6 +1067,10 @@ namespace IwoBridge.Wpf.ViewModels
             OnPropertyChanged(nameof(SuppressedReason));
             OnPropertyChanged(nameof(ConflictText));
             OnPropertyChanged(nameof(WarningsText));
+            Categories = _preview is null ? Array.Empty<CategoryRow>() : _preview.Categories.Select(c => new CategoryRow(c)).ToArray();
+            OnPropertyChanged(nameof(Categories));
+            OnPropertyChanged(nameof(HasCategories));
+            OnPropertyChanged(nameof(CategoriesHeader));
             OnPropertyChanged(nameof(UnchangedCount));
             Refresh();
         }
@@ -1013,6 +1086,8 @@ namespace IwoBridge.Wpf.ViewModels
             SelectNoneCommand.RaiseCanExecuteChanged();
             SetRecentCommand.RaiseCanExecuteChanged();
             SetThisYearCommand.RaiseCanExecuteChanged();
+            SetAllTimeCommand.RaiseCanExecuteChanged();
+            ChooseDatesCommand.RaiseCanExecuteChanged();
         }
 
         private void ThrowIfBusy()

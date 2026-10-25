@@ -208,6 +208,27 @@ namespace IwoBridge.Wpf.Tests
         }
 
         [Fact]
+        public async Task AllTime_Remembered_AutoCopyCopiesWholeCalendar()
+        {
+            var store = new MemoryCopySettingsStore(new CopySettings(fromOutlook: false, daysBack: 5, daysForward: 3));
+            var past = new SourceItem("past", "Давнее", null, null, new DateTime(2003, 5, 5, 9, 0, 0, DateTimeKind.Utc), new DateTime(2003, 5, 5, 10, 0, 0, DateTimeKind.Utc));
+            (CopyViewModel vm, TestSession target, _, _) = Create(new[] { Item("near", 18), past }, store: store);
+
+            vm.IsAllTime = true;
+            Assert.True(store.Current.AllTime);
+            Assert.Equal(5, store.Current.DaysBack); // дни для периода по датам не потеряны
+
+            await vm.RunScheduledAsync();
+
+            Assert.Equal(new[] { "near", "past" }, target.Copies.Copies.Select(c => c.Item.SourceId).OrderBy(s => s, StringComparer.Ordinal));
+            Assert.True(vm.IsAllTime);
+
+            // После перезапуска программы — снова «всё время».
+            (CopyViewModel reopened, _, _, _) = Create(Array.Empty<SourceItem>(), store: store);
+            Assert.True(reopened.IsAllTime);
+        }
+
+        [Fact]
         public async Task ConnectionNeedsAttention_ReportedAsPause()
         {
             (CopyViewModel vm, TestSession target, _, _) = Create(Item("a", 10));

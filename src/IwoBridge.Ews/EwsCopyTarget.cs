@@ -321,6 +321,18 @@ namespace IwoBridge.Ews
             appointment.LegacyFreeBusyStatus = EwsFieldMapper.ToEws(item.Busy);
             appointment.Sensitivity = EwsFieldMapper.ToEws(item.Sensitivity);
             appointment.IsReminderSet = false;
+
+            // Категории — названиями; цвет копии задаёт список категорий приёмника. Пустые у перезаписываемой копии —
+            // удаление поля (DeleteItemField): категории, снятые в источнике, снимаются и в копии.
+            if (item.Categories.Count > 0)
+            {
+                appointment.Categories = new StringList(item.Categories);
+            }
+            else if (!appointment.IsNew)
+            {
+                appointment.Categories = null;
+            }
+
             appointment.SetExtendedProperty(BridgeExtendedProperties.SourceId, item.SourceId);
             appointment.SetExtendedProperty(BridgeExtendedProperties.ContentHash, contentHash);
             if (item.Recurrence != null)
@@ -415,9 +427,26 @@ namespace IwoBridge.Ews
                             occurrence.Sensitivity = Sensitivity.Private;
                         }
 
+                        // Свои категории повторения; без своих оно наследует категории серии (копия серии только что создана).
+                        if (exception.Categories?.Count > 0)
+                        {
+                            occurrence.Categories = new StringList(exception.Categories);
+                        }
+
                         occurrence.Update(ConflictResolutionMode.AlwaysOverwrite, SendInvitationsOrCancellationsMode.SendToNone);
                     },
                     cancellationToken).ConfigureAwait(false);
+
+                // Снять у одного повторения категории серии Exchange 2007 не даёт: удаление поля у повторения он отклоняет
+                // (ErrorInvalidPropertyDelete, и для item:Categories, и для расширенного свойства), а пустой список
+                // пропускает без изменений (проверено вживую). Повторение остаётся с категориями серии — человек видит это в итоге.
+                if (exception.Categories?.Count == 0 && item.Categories.Count > 0)
+                {
+                    remarks.Add(
+                        "у повторения от "
+                        + TimeZoneInfo.ConvertTimeFromUtc(expected, _calendarZone).ToString("dd.MM.yyyy HH:mm", System.Globalization.CultureInfo.InvariantCulture)
+                        + " остались категории серии: снять их у одного повторения сервер не позволяет");
+                }
             }
 
             return remarks;

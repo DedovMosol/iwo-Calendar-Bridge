@@ -116,6 +116,17 @@ namespace IwoBridge.Wpf.Tests
                         Assert.True(page.ScrollableHeight == 0, $"прокрутка {page.ScrollableHeight:0}, видимая {page.ViewportHeight:0}, содержимое {page.ExtentHeight:0}, консоль {console:0}");
                         AssertUniqueAccessKeys(window);
 
+                        // Категории демонстрации — свёрнутой подсказкой в строке заголовка; развёрнутая — со списком и образцами.
+                        var categories = Visuals.ByAutomationId<Expander>(window, "CopyCategories");
+                        Assert.True(categories.IsVisible);
+                        categories.IsExpanded = true;
+                        await Visuals.Settle(window);
+                        ItemsControl list = Visuals.All<ItemsControl>(categories).Single(i => i.ItemsSource != null);
+                        Assert.Equal(vm.Copy.Categories.Count, list.Items.Count);
+                        Assert.Contains(vm.Copy.Categories, c => c.HasSwatch);
+                        categories.IsExpanded = false;
+                        await Visuals.Settle(window);
+
                         // Флажок первой строки снимается щелчком по самому флажку в таблице.
                         var grid = Visuals.ByAutomationId<DataGrid>(window, "CopyRows");
                         CheckBox first = Visuals.All<DataGridRow>(grid).OrderBy(r => r.GetIndex()).First()
@@ -130,6 +141,16 @@ namespace IwoBridge.Wpf.Tests
                         Assert.Equal(total - 1, (await session.CopyTarget.ReadCopiesAsync(default)).Count);
                         var result = Visuals.ByAutomationId<TextBox>(window, "CopyResult");
                         Assert.True(result.IsVisible);
+
+                        // «Всё время»: вместо полей дат — подпись; «выбрать даты» возвращает поля.
+                        vm.Copy.SetAllTimeCommand.Execute(null);
+                        await Visuals.Settle(window);
+                        Assert.True(Visuals.ByAutomationId<TextBlock>(window, "AllTimeText").IsVisible);
+                        Assert.All(Visuals.All<DatePicker>(page), d => Assert.False(d.IsVisible));
+                        vm.Copy.ChooseDatesCommand.Execute(null);
+                        await Visuals.Settle(window);
+                        Assert.False(Visuals.ByAutomationId<TextBlock>(window, "AllTimeText").IsVisible);
+                        Assert.All(Visuals.All<DatePicker>(page), d => Assert.True(d.IsVisible));
                         Assert.Equal(string.Empty, errors.Text);
                     }
                     finally

@@ -5,6 +5,7 @@ using System.Runtime.Serialization.Json;
 using System.Text;
 using System.Xml;
 using IwoBridge.Core.Sync;
+using IwoBridge.Core.Time;
 
 namespace IwoBridge.App.Configuration
 {
@@ -29,8 +30,10 @@ namespace IwoBridge.App.Configuration
             int daysBack = 30,
             int daysForward = 92,
             string? outlookOwner = null,
-            string? outlookCalendarKey = null)
+            string? outlookCalendarKey = null,
+            bool allTime = false)
         {
+            AllTime = allTime;
             OutlookCalendarKey = string.IsNullOrWhiteSpace(outlookCalendarKey) ? null : outlookCalendarKey;
             FromOutlook = fromOutlook;
             OutlookOwner = string.IsNullOrWhiteSpace(outlookOwner) ? null : outlookOwner!.Trim();
@@ -69,8 +72,17 @@ namespace IwoBridge.App.Configuration
 
         public int DaysForward { get; }
 
+        /// <summary>
+        /// Период — «всё время»: все события календаря, прошлые и будущие, в пределах дат, которые принимает Exchange
+        /// (<see cref="TargetTimeZone.MinPeriodDate"/> — <see cref="TargetTimeZone.MaxPeriodDate"/>). Дни назад и вперёд
+        /// при этом сохраняются: выбор другого периода возвращается к ним.
+        /// </summary>
+        public bool AllTime { get; }
+
         /// <summary>Период автокопирования на дату <paramref name="today"/>: первый и последний день включительно.</summary>
-        public (DateTime First, DateTime Last) Window(DateTime today) => (today.Date.AddDays(-DaysBack), today.Date.AddDays(DaysForward));
+        public (DateTime First, DateTime Last) Window(DateTime today) => AllTime
+            ? (TargetTimeZone.MinPeriodDate, TargetTimeZone.MaxPeriodDate)
+            : (today.Date.AddDays(-DaysBack), today.Date.AddDays(DaysForward));
 
         private static int Clamp(int days) => Math.Max(-MaxDays, Math.Min(MaxDays, days));
     }
@@ -141,7 +153,8 @@ namespace IwoBridge.App.Configuration
                         d.DaysBack ?? 30,
                         d.DaysForward ?? 92,
                         d.OutlookOwner,
-                        d.OutlookCalendarKey);
+                        d.OutlookCalendarKey,
+                        d.AllTime);
                 }
             }
             catch (Exception ex) when (ex is SerializationException || ex is XmlException || ex is ArgumentException || ex is NotSupportedException)
@@ -170,6 +183,7 @@ namespace IwoBridge.App.Configuration
                 DaysForward = settings.DaysForward,
                 OutlookOwner = settings.OutlookOwner,
                 OutlookCalendarKey = settings.OutlookCalendarKey,
+                AllTime = settings.AllTime,
             };
 
             string fullPath = Path.GetFullPath(path);
@@ -227,6 +241,9 @@ namespace IwoBridge.App.Configuration
 
             [DataMember(Name = "outlookCalendarId", Order = 9)]
             public string? OutlookCalendarKey { get; set; }
+
+            [DataMember(Name = "allTime", Order = 10)]
+            public bool AllTime { get; set; }
         }
     }
 }

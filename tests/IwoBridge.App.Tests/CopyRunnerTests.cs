@@ -107,6 +107,46 @@ namespace IwoBridge.App.Tests
         }
 
         [Fact]
+        public async Task Categories_Copied_ChangeRewritesCopy_PreviewListsThemWithSourceColors()
+        {
+            var source = new InMemorySource("источник", new[] { Event("a", 3, categories: new[] { "Красная категория", "Проект" }), Event("b", 5) })
+            {
+                CategoryColors = new System.Collections.Generic.Dictionary<string, CategoryColor> { ["Красная категория"] = CategoryColor.Red },
+            };
+            var target = new InMemoryCopyTarget();
+            var runner = new CopyRunner(source, target);
+
+            CopyPreview first = await runner.PreviewAsync(From, To, false, null, CancellationToken.None);
+            Assert.Equal(new[] { "Красная категория", "Проект" }, first.Categories.Select(c => c.Name));
+            Assert.Equal(new CategoryColor?[] { CategoryColor.Red, null }, first.Categories.Select(c => c.Color));
+            await runner.RunAsync(first, first.Recommended, null, CancellationToken.None);
+            Assert.Equal(new[] { "Красная категория", "Проект" }, target.Copies.Single(c => c.Item.SourceId == "a").Item.Categories);
+
+            source.Put(Event("a", 3, categories: new[] { "Проект" }));
+            CopyPreview changed = await runner.PreviewAsync(From, To, false, null, CancellationToken.None);
+
+            SyncAction update = Assert.Single(changed.Plan.Actions);
+            Assert.Equal(SyncActionKind.Update, update.Kind);
+            Assert.Equal("a", update.SourceId);
+            await runner.RunAsync(changed, changed.Recommended, null, CancellationToken.None);
+            Assert.Equal(new[] { "Проект" }, target.Copies.Single(c => c.Item.SourceId == "a").Item.Categories);
+        }
+
+        [Fact]
+        public async Task PrivateEvent_Hidden_CategoriesNotCopiedNorListed()
+        {
+            var secret = new SourceItem("p", "Врач", null, null, Day(4), Day(4).AddHours(1), sensitivity: ItemSensitivity.Private, categories: new[] { "Здоровье" });
+            var target = new InMemoryCopyTarget();
+            var runner = new CopyRunner(new InMemorySource("источник", new[] { secret }), target);
+
+            CopyPreview preview = await runner.PreviewAsync(From, To, false, null, CancellationToken.None);
+            await runner.RunAsync(preview, preview.Recommended, null, CancellationToken.None);
+
+            Assert.Empty(preview.Categories);
+            Assert.Empty(Assert.Single(target.Copies).Item.Categories);
+        }
+
+        [Fact]
         public async Task Attachments_LoadedOnlyForWrittenEvents()
         {
             var withFile = new SourceItem("f", "Отчёт", null, null, Day(2), Day(2).AddHours(1), attachments: new[] { new SyncAttachment("отчёт.docx", 3) });
@@ -371,8 +411,8 @@ namespace IwoBridge.App.Tests
 
         private static DateTime Day(int day) => From.AddDays(day).AddHours(9);
 
-        private static SourceItem Event(string id, int day, string? subject = null) =>
-            new SourceItem(id, subject ?? "Событие " + id, "Зал", "Повестка", Day(day), Day(day).AddHours(1));
+        private static SourceItem Event(string id, int day, string? subject = null, string[]? categories = null) =>
+            new SourceItem(id, subject ?? "Событие " + id, "Зал", "Повестка", Day(day), Day(day).AddHours(1), categories: categories);
 
         private static SourceItem Series(string id, int day) =>
             new SourceItem(

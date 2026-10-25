@@ -35,6 +35,10 @@ namespace IwoBridge.Outlook
         private const string ClipEndProp = "http://schemas.microsoft.com/mapi/id/{00062002-0000-0000-C000-000000000046}/82360040";
         private const string GlobalIdProp = "http://schemas.microsoft.com/mapi/id/{6ED8DA90-450B-101B-98DA-00AA003F1305}/00030102";
 
+        // Категории события точным списком (PidNameKeywords, многозначная строка): в строке Categories они разделены
+        // разделителем списка Windows, а он может встретиться и в самом названии.
+        private const string KeywordsProp = "http://schemas.microsoft.com/mapi/string/{00020329-0000-0000-C000-000000000046}/Keywords";
+
         // Метка копии моста (то же именованное свойство, что пишет приёмник EWS: набор и имя — константы продукта).
         // Тип (0x001F — строка) указывается явно: именованное свойство из своего набора Outlook иначе не принимает.
         private const string BridgeMarkProp = "http://schemas.microsoft.com/mapi/string/{8E2B2E7A-0D2A-4E6E-9E8C-9C2B1A7F3D10}/IwoBridgeSourceId/0x0000001F";
@@ -107,11 +111,13 @@ namespace IwoBridge.Outlook
                 {
                     List<Row> rows;
                     string storeId;
+                    Dictionary<string, CategoryColor> colors;
                     dynamic folder = OutlookSession.OpenFolder((object)ns, _calendar);
                     try
                     {
                         storeId = (string)folder.StoreID;
                         rows = ReadTable(folder, cancellationToken);
+                        colors = ReadCategoryColors((object)ns, (object)folder);
                     }
                     finally
                     {
@@ -159,7 +165,8 @@ namespace IwoBridge.Outlook
                     return new SourceRead(
                         items,
                         unreadable == 0 ? null : "Не прочитано событий Outlook: " + unreadable + ". Первое — " + firstFailure,
-                        warnings);
+                        warnings,
+                        colors);
                 },
                 cancellationToken);
         }
@@ -341,17 +348,21 @@ namespace IwoBridge.Outlook
                     rtf = MapiRtf.FromRtf(raw!);
                 }
 
+                step = "категории";
+                IReadOnlyList<string> categories = ReadCategories((object)appointment);
+
                 RecurrenceRule? rule = null;
                 DateTime? seriesEnd = null;
                 var exceptions = new List<SourceException>();
                 if ((bool)appointment.IsRecurring)
                 {
                     step = "правило серии";
-                    (rule, seriesEnd) = ReadSeries((object)appointment, subject, end, exceptions, warnings);
+                    (rule, seriesEnd) = ReadSeries((object)appointment, subject, end, categories, exceptions, warnings);
                 }
 
                 return new SourceItem(
-                    sourceId, subject, (string)appointment.Location, body, start, end, allDay, busy, sensitivity, rule, seriesEnd, exceptions, attachments, rtf);
+                    sourceId, subject, (string)appointment.Location, body, start, end, allDay, busy, sensitivity, rule, seriesEnd, exceptions, attachments, rtf,
+                    categories);
             }
 #pragma warning disable CA1031 // Непрочитанное событие делает чтение неполным (без удалений), но не обрывает его.
             catch (Exception ex) when (!OutlookSession.IsFatal(ex))
@@ -405,7 +416,7 @@ namespace IwoBridge.Outlook
         }
 
         private static (RecurrenceRule Rule, DateTime? SeriesEnd) ReadSeries(
-            dynamic appointment, string subject, DateTime end, List<SourceException> exceptions, List<string> warnings)
+            dynamic appointment, string subject, DateTime end, IReadOnlyList<string> categories, List<SourceException> exceptions, List<string> warnings)
         {
             dynamic pattern = appointment.GetRecurrencePattern();
             dynamic? found = null;
@@ -444,7 +455,7 @@ namespace IwoBridge.Outlook
                     dynamic exception = found.Item(i);
                     try
                     {
-                        exceptions.Add(ReadException((object)exception, subject, warnings));
+                        exceptions.Add(ReadException((object)exception, subject, categories, warnings));
                     }
                     finally
                     {
@@ -461,7 +472,7 @@ namespace IwoBridge.Outlook
             }
         }
 
-        private static SourceException ReadException(dynamic exception, string subject, List<string> warnings)
+        private static SourceException ReadException(dynamic exception, string subject, IReadOnlyList<string> seriesCategories, List<string> warnings)
         {
             DateTime originalLocal = (DateTime)exception.OriginalDate;
             DateTime original = LocalToUtc(originalLocal);
@@ -496,7 +507,8 @@ namespace IwoBridge.Outlook
                     (string)changed.Subject,
                     (string)changed.Location,
                     (string)changed.Body,
-                    isPrivate: sensitivity == OlPrivate || sensitivity == OlConfidential);
+                    isPrivate: sensitivity == OlPrivate || sensitivity == OlConfidential,
+                    categories: EventCategories.OfOccurrence(ReadCategories((object)changed), seriesCategories));
             }
             finally
             {
@@ -534,6 +546,142 @@ namespace IwoBridge.Outlook
 #pragma warning restore CA1031
             {
                 return null;
+            }
+        }
+
+        /// <summary>
+        /// Категории события или повторения. Строка Categories пуста — категорий нет (свойство Keywords тогда не
+        /// читается). Иначе точный список — из Keywords; не прочиталось — строка, разделённая разделителем списка Windows.
+        /// </summary>
+        private static IReadOnlyList<string> ReadCategories(dynamic item)
+        {
+            string text = (string)item.Categories ?? string.Empty;
+            if (text.Trim().Length == 0)
+            {
+                return Array.Empty<string>();
+            }
+
+            dynamic? accessor = null;
+            try
+            {
+                accessor = item.PropertyAccessor;
+                object value = accessor.GetProperty(KeywordsProp);
+                if (value is Array names)
+                {
+                    IReadOnlyList<string> exact = EventCategories.Normalize(names.OfType<string>());
+                    if (exact.Count > 0)
+                    {
+                        return exact;
+                    }
+                }
+            }
+#pragma warning disable CA1031 // Точный список не прочитался — названия берутся из строки; сбой всего Outlook не глотается.
+            catch (Exception ex) when (!OutlookSession.IsFatal(ex))
+#pragma warning restore CA1031
+            {
+            }
+            finally
+            {
+                Com.Release(accessor);
+            }
+
+            Interlocked.Increment(ref _keywordsFallbacks);
+            return SplitCategories(text, ListSeparator());
+        }
+
+        private static int _keywordsFallbacks;
+
+        /// <summary>Сколько раз точный список категорий не прочитался и названия взяты из строки (живая проверка Outlook).</summary>
+        internal static int KeywordsFallbacks => Volatile.Read(ref _keywordsFallbacks);
+
+        /// <summary>Строка категорий Outlook → названия: разделитель — разделитель списка Windows (у русской Windows «;»).</summary>
+        internal static IReadOnlyList<string> SplitCategories(string? text, string? separator)
+        {
+            string delimiter = string.IsNullOrEmpty(separator) ? ";" : separator!;
+            return EventCategories.Normalize((text ?? string.Empty).Split(new[] { delimiter }, StringSplitOptions.RemoveEmptyEntries));
+        }
+
+        /// <summary>Разделитель списка Windows (Control Panel\International\sList) — им Outlook разделяет категории в строке.</summary>
+        private static string ListSeparator()
+        {
+            using (Microsoft.Win32.RegistryKey? key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Control Panel\International"))
+            {
+                if (key?.GetValue("sList") is string value && value.Length > 0)
+                {
+                    return value;
+                }
+            }
+
+            return CultureInfo.CurrentCulture.TextInfo.ListSeparator;
+        }
+
+        /// <summary>
+        /// Цвета категорий по названию: сначала список ящика, где лежит календарь (Store.Categories, Outlook 2010 и новее, —
+        /// по нему Outlook раскрашивает и общий календарь), затем свой список профиля (Namespace.Categories, Outlook 2007 и
+        /// новее). Список не открылся (нет прав, старый Outlook) — цвета этих категорий неизвестны, чтение продолжается.
+        /// </summary>
+        private static Dictionary<string, CategoryColor> ReadCategoryColors(dynamic ns, dynamic folder)
+        {
+            var colors = new Dictionary<string, CategoryColor>(StringComparer.OrdinalIgnoreCase);
+            dynamic? store = null;
+            try
+            {
+                store = folder.Store;
+                AddColors((object)store, colors);
+            }
+#pragma warning disable CA1031 // Цвета — только подсказка в предпросмотре; копирование от них не зависит.
+            catch (Exception ex) when (!OutlookSession.IsFatal(ex))
+#pragma warning restore CA1031
+            {
+            }
+            finally
+            {
+                Com.Release(store);
+            }
+
+            try
+            {
+                AddColors((object)ns, colors);
+            }
+#pragma warning disable CA1031 // Как выше.
+            catch (Exception ex) when (!OutlookSession.IsFatal(ex))
+#pragma warning restore CA1031
+            {
+            }
+
+            return colors;
+        }
+
+        /// <summary>Категории списка (коллекция Categories хранилища или профиля) — в словарь, если названия там ещё нет.</summary>
+        private static void AddColors(dynamic owner, Dictionary<string, CategoryColor> colors)
+        {
+            dynamic? list = null;
+            try
+            {
+                list = owner.Categories;
+                int count = (int)list.Count;
+                for (int i = 1; i <= count; i++)
+                {
+                    StaWorker.Touch();
+                    dynamic category = list.Item(i);
+                    try
+                    {
+                        string name = ((string)category.Name ?? string.Empty).Trim();
+                        int color = (int)category.Color;
+                        if (name.Length > 0 && !colors.ContainsKey(name) && Enum.IsDefined(typeof(CategoryColor), color))
+                        {
+                            colors.Add(name, (CategoryColor)color);
+                        }
+                    }
+                    finally
+                    {
+                        Com.Release(category);
+                    }
+                }
+            }
+            finally
+            {
+                Com.Release(list);
             }
         }
 

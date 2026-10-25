@@ -77,9 +77,11 @@ namespace IwoBridge.Core.Sync
             IEnumerable<string>? exceptions = null,
             IEnumerable<SyncAttachment>? attachments = null,
             string? sensitivity = null,
-            string? richBody = null)
+            string? richBody = null,
+            IEnumerable<string>? categories = null)
         {
             RichBody = richBody ?? string.Empty;
+            Categories = EventCategories.Ordered(EventCategories.Normalize(categories)).ToArray();
             Subject = subject ?? string.Empty;
             Location = location ?? string.Empty;
             Body = NormalizeBody(body);
@@ -136,6 +138,12 @@ namespace IwoBridge.Core.Sync
         public string RichBody { get; }
 
         /// <summary>
+        /// Категории события (<see cref="EventCategories"/>) в порядке для отпечатка. Как и <see cref="RichBody"/>, входят
+        /// в отпечаток, только если есть: у событий без категорий отпечаток прежний.
+        /// </summary>
+        public IReadOnlyList<string> Categories { get; }
+
+        /// <summary>
         /// Отпечаток: «v1:» + SHA-256 (шестнадцатеричный) канонической записи полей. Каждое поле записывается с
         /// длиной впереди — разные наборы полей не могут дать одну запись («ab»+«c» ≠ «a»+«bc»).
         /// </summary>
@@ -171,6 +179,16 @@ namespace IwoBridge.Core.Sync
                 {
                     Field(text, "rtf");
                     Field(text, RichBody);
+                }
+
+                if (Categories.Count > 0)
+                {
+                    Field(text, "categories");
+                    Field(text, Categories.Count.ToString(CultureInfo.InvariantCulture));
+                    foreach (string category in Categories)
+                    {
+                        Field(text, category);
+                    }
                 }
 
                 using (var sha = SHA256.Create())

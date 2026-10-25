@@ -22,6 +22,11 @@
                                    ToolTip="Приёмник — куда копировать. Программа работает только со своими копиями, ваши события остаются как есть.">
                             <Run Text="Куда:" Foreground="{DynamicResource MutedTextBrush}" /> <Run Text="{Binding TargetLabel, Mode=OneWay}" FontWeight="SemiBold" />
                         </TextBlock>
+                        <TextBlock VerticalAlignment="Center" Margin="0,0,10,4" Foreground="{DynamicResource MutedTextBrush}"
+                                   Visibility="{Binding HasTarget, Converter={StaticResource VisibleWhen}}"
+                                   ToolTip="Часовой пояс календаря приёмника: в нём считаются даты периода и время копий">
+                            <Run Text="пояс" /> <Run Text="{Binding TimeZoneText, Mode=OneWay}" />
+                        </TextBlock>
                         <Button VerticalAlignment="Center" Margin="0,0,0,4"
                                 Command="{Binding DataContext.EditConnectionCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                 Visibility="{Binding DataContext.CanEditConnections, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource VisibleWhen}}"
@@ -117,7 +122,21 @@
 
                         <TextBlock Grid.Row="2" Text="Период" Margin="0,10,12,0" Foreground="{DynamicResource MutedTextBrush}" />
                         <WrapPanel Grid.Row="2" Grid.Column="1" Margin="0,4,0,0">
-                            <StackPanel Orientation="Horizontal" Margin="0,2,16,2">
+                            <!-- «Всё время»: вместо дат — подпись и возврат к датам. -->
+                            <StackPanel Orientation="Horizontal" Margin="0,2,16,2" MinHeight="26"
+                                        Visibility="{Binding IsAllTime, Converter={StaticResource VisibleWhen}}">
+                                <TextBlock Text="всё время" FontWeight="SemiBold" VerticalAlignment="Center"
+                                           AutomationProperties.AutomationId="AllTimeText"
+                                           ToolTip="Все события календаря, прошлые и будущие. Каждое копирование, и по расписанию тоже, читает календарь целиком: на большом календаре это дольше, и для автокопирования лучше интервал от часа." />
+                                <TextBlock Text="— все события, прошлые и будущие" VerticalAlignment="Center" Margin="6,0,0,0"
+                                           Foreground="{DynamicResource MutedTextBrush}" />
+                                <Button Style="{StaticResource LinkButton}" Margin="12,0,0,0" VerticalAlignment="Center"
+                                        Content="выбрать даты" Command="{Binding ChooseDatesCommand}"
+                                        AutomationProperties.AutomationId="ChooseDatesButton"
+                                        ToolTip="Вернуться к периоду по датам (прежние дни назад и вперёд от сегодня)" />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,2,16,2"
+                                        Visibility="{Binding IsAllTime, Converter={StaticResource VisibleWhen}, ConverterParameter=invert}">
                                 <TextBlock Text="с" VerticalAlignment="Center" Margin="0,0,8,0" />
                                 <DatePicker Width="150" SelectedDate="{Binding PeriodStart}"
                                             AutomationProperties.Name="Первый день периода копирования"
@@ -127,9 +146,7 @@
                                             AutomationProperties.Name="Последний день периода копирования"
                                             ToolTip="Последний день периода, дд.мм.гггг. День входит в период целиком." />
                                 <TextBlock VerticalAlignment="Center" Margin="8,0,0,0" Foreground="{DynamicResource MutedTextBrush}"
-                                           ToolTip="Даты и время — в часовом поясе приёмника">
-                                    <Run Text="включительно," /> <Run Text="{Binding TimeZoneText, Mode=OneWay}" />
-                                </TextBlock>
+                                           Text="включительно" ToolTip="Последний день входит в период целиком. Даты — в часовом поясе приёмника (он указан в строке «Куда»)." />
                             </StackPanel>
                             <StackPanel Orientation="Horizontal" Margin="0,2" VerticalAlignment="Center">
                                 <Button Style="{StaticResource LinkButton}" VerticalAlignment="Center"
@@ -138,6 +155,10 @@
                                 <Button Style="{StaticResource LinkButton}" Margin="10,0,0,0" VerticalAlignment="Center"
                                         Content="весь год" Command="{Binding SetThisYearCommand}"
                                         ToolTip="С 1 января по 31 декабря текущего года" />
+                                <Button Style="{StaticResource LinkButton}" Margin="10,0,0,0" VerticalAlignment="Center"
+                                        Content="всё время" Command="{Binding SetAllTimeCommand}"
+                                        AutomationProperties.AutomationId="AllTimeButton"
+                                        ToolTip="Все события календаря, прошлые и будущие, без ограничения датами. Автокопирование тоже копирует всё и каждый раз читает календарь целиком: для большого календаря выберите интервал от часа." />
                             </StackPanel>
                         </WrapPanel>
 
@@ -270,8 +291,41 @@
 
                     <WrapPanel>
                         <TextBlock Style="{StaticResource SectionText}" Margin="0,0,16,4" Text="2. Проверьте, что будет сделано" />
-                        <TextBlock FontSize="17" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,4"
+                        <TextBlock FontSize="17" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,24,4" VerticalAlignment="Center"
                                    views:Announce.Text="{Binding Summary}" AutomationProperties.LiveSetting="Polite" />
+                        <!-- Категории — в строке заголовка и свёрнуты: подсказка нужна один раз, когда в приёмнике заводят те же
+                             категории, а таблице нужно место. Развёрнутая — на всю ширину следующей строкой. -->
+                        <Expander Header="{Binding CategoriesHeader}" Margin="0,0,0,4" VerticalAlignment="Center"
+                                  Visibility="{Binding HasCategories, Converter={StaticResource VisibleWhen}}"
+                                  AutomationProperties.AutomationId="CopyCategories"
+                                  ToolTip="Копии получают категории с теми же названиями, а цвет — из списка категорий приёмника">
+                            <Border Style="{StaticResource InfoBanner}" Margin="0,4,0,0" Padding="12,6">
+                                <StackPanel>
+                                    <TextBlock TextWrapping="Wrap"
+                                               Text="Копии получают категории с теми же названиями. Цвет события в календаре-приёмнике задаёт список категорий его почтового ящика: есть там категория с таким же названием — копия окрашена её цветом, нет — копия без цвета. Стандартные категории Outlook («Красная категория» и другие) там обычно уже есть. Остальные создайте один раз в Outlook ящика-приёмника (окно «Все категории») с тем же названием и цветом. Образец рядом с названием — цвет в источнике." />
+                                    <ScrollViewer MaxHeight="96" VerticalScrollBarVisibility="Auto" Margin="0,6,0,0">
+                                        <ItemsControl ItemsSource="{Binding Categories}" AutomationProperties.Name="Категории событий">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate>
+                                                    <WrapPanel />
+                                                </ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <StackPanel Orientation="Horizontal" Margin="0,2,16,2">
+                                                        <Border Width="14" Height="14" Margin="0,0,6,0" VerticalAlignment="Center"
+                                                                BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
+                                                                Background="{Binding Swatch}"
+                                                                Visibility="{Binding HasSwatch, Converter={StaticResource VisibleWhen}}" />
+                                                        <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </ScrollViewer>
+                                </StackPanel>
+                            </Border>
+                        </Expander>
                     </WrapPanel>
 
                     <!-- Отступы — у самих полос: скрытые полосы места не занимают. -->
@@ -304,6 +358,7 @@
                                          Text="{Binding WarningsText, Mode=OneWay}" AutomationProperties.Name="Замечания к источнику" />
                             </Expander>
                         </Border>
+
                         <Border Style="{StaticResource SuccessBanner}" Margin="0,8,0,0" Visibility="{Binding NothingToDo, Converter={StaticResource VisibleWhen}}">
                             <TextBlock TextWrapping="Wrap" Text="Приёмник уже совпадает с источником за этот период — делать нечего." />
                         </Border>

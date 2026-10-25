@@ -39,7 +39,8 @@ namespace IwoBridge.Core.Sync
             string? subject = null,
             string? location = null,
             string? body = null,
-            bool isPrivate = false)
+            bool isPrivate = false,
+            IEnumerable<string>? categories = null)
         {
             OriginalStartUtc = TimeMapper.ToUtc(originalStartUtc);
             IsDeleted = isDeleted;
@@ -56,6 +57,7 @@ namespace IwoBridge.Core.Sync
                 Location = location;
                 Body = body;
                 IsPrivate = isPrivate;
+                Categories = categories is null ? null : EventCategories.Normalize(categories);
             }
         }
 
@@ -80,8 +82,15 @@ namespace IwoBridge.Core.Sync
         public bool IsPrivate { get; }
 
         /// <summary>
+        /// Свои категории изменённого повторения; <c>null</c> — те же, что у серии (<see cref="EventCategories.OfOccurrence"/>).
+        /// Пустой список — у повторения категории сняты, хотя у серии они есть.
+        /// </summary>
+        public IReadOnlyList<string>? Categories { get; }
+
+        /// <summary>
         /// Каноническая запись для отпечатка. Текстовые поля — с длиной впереди, отсутствие — отдельной меткой: иначе
         /// «a|b» + «c» и «a» + «b|c» давали бы одну запись, а очищенная тема не отличалась бы от отсутствующей.
+        /// Свои категории — последним полем и только если они есть: у повторений без них запись прежняя.
         /// </summary>
         public string Canonical => IsDeleted
             ? OriginalStartUtc.Ticks.ToString(CultureInfo.InvariantCulture) + "|deleted"
@@ -93,7 +102,11 @@ namespace IwoBridge.Core.Sync
                 Field(Subject),
                 Field(Location),
                 Field(Body),
-                IsPrivate ? "private" : "normal");
+                IsPrivate ? "private" : "normal")
+              + (Categories is null
+                  ? string.Empty
+                  : "|categories:" + Categories.Count.ToString(CultureInfo.InvariantCulture)
+                    + string.Concat(EventCategories.Ordered(Categories).Select(c => "|" + Field(c))));
 
         private static string Field(string? value) =>
             value is null ? "-" : value.Length.ToString(CultureInfo.InvariantCulture) + ":" + value;
@@ -127,7 +140,8 @@ namespace IwoBridge.Core.Sync
             DateTime? seriesEndUtc = null,
             IEnumerable<SourceException>? exceptions = null,
             IEnumerable<SyncAttachment>? attachments = null,
-            byte[]? rtfCompressed = null)
+            byte[]? rtfCompressed = null,
+            IEnumerable<string>? categories = null)
         {
             if (string.IsNullOrEmpty(sourceId))
             {
@@ -153,9 +167,16 @@ namespace IwoBridge.Core.Sync
             Exceptions = recurrence is null ? Array.Empty<SourceException>() : (exceptions ?? Array.Empty<SourceException>()).ToArray();
             Attachments = (attachments ?? Array.Empty<SyncAttachment>()).ToArray();
             RtfCompressed = rtfCompressed is null || rtfCompressed.Length == 0 ? null : rtfCompressed;
+            Categories = EventCategories.Normalize(categories);
         }
 
         public string SourceId { get; }
+
+        /// <summary>
+        /// Категории события (названия, <see cref="EventCategories"/>). Копия получает те же названия; цвет у неё — из
+        /// списка категорий приёмника.
+        /// </summary>
+        public IReadOnlyList<string> Categories { get; }
 
         /// <summary>
         /// Описание с оформлением и картинками — в формате свойства MAPI <c>PR_RTF_COMPRESSED</c> (<see cref="MapiRtf"/>);
@@ -210,7 +231,8 @@ namespace IwoBridge.Core.Sync
             Exceptions.Select(e => e.Canonical),
             Attachments,
             Sensitivity.ToString(),
-            RtfCompressed is null ? null : MapiRtf.Fingerprint(RtfCompressed)).Hash;
+            RtfCompressed is null ? null : MapiRtf.Fingerprint(RtfCompressed),
+            Categories).Hash;
 
         /// <summary>Описание для планировщика синхронизации.</summary>
         public SourceEvent ToEvent() => new SourceEvent(SourceId, Kind, StartUtc, SpanEndUtc, ContentHash, Subject);
@@ -220,15 +242,18 @@ namespace IwoBridge.Core.Sync
         {
             return new SourceItem(
                 SourceId, Subject, Location, Body, StartUtc, EndUtc, IsAllDay, Busy, Sensitivity, Recurrence, SeriesEndUtc, exceptions,
-                Attachments, RtfCompressed);
+                Attachments, RtfCompressed, Categories);
         }
 
-        /// <summary>Копия события с другим содержимым (для правил переноса, например скрытия личного).</summary>
+        /// <summary>
+        /// Копия события с другим содержимым (для правил переноса, например скрытия личного): без места, описания,
+        /// вложений и категорий — название категории тоже говорит о содержании («Врач», «Собеседование»).
+        /// </summary>
         internal SourceItem WithoutDetails(string subject, IEnumerable<SourceException> exceptions)
         {
             return new SourceItem(
                 SourceId, subject, string.Empty, string.Empty, StartUtc, EndUtc, IsAllDay, Busy, Sensitivity, Recurrence, SeriesEndUtc, exceptions,
-                Array.Empty<SyncAttachment>(), rtfCompressed: null);
+                Array.Empty<SyncAttachment>(), rtfCompressed: null, categories: null);
         }
     }
 
@@ -246,7 +271,7 @@ namespace IwoBridge.Core.Sync
 
         /// <summary>
         /// Событие для копии по правилу для личных (Private) событий; <c>null</c> — не копировать. По умолчанию в копии
-        /// личного только время и занятость — без темы, места, описания и вложений: коллеги
+        /// личного только время и занятость — без темы, места, описания, вложений и категорий: коллеги
         /// домена-приёмника увидят «занято», содержимое не покидает источник.
         /// </summary>
         public static SourceItem? Prepare(SourceItem item, PrivateEvents privateEvents)
@@ -275,7 +300,11 @@ namespace IwoBridge.Core.Sync
                 : item.WithoutDetails(PrivateSubject, item.Exceptions.Select(e => PrepareException(e, PrivateEvents.HideDetails)));
         }
 
-        /// <summary>Повторение по правилу для личного: «Скрыть» — только время, «Не копировать» — как удалённое.</summary>
+        /// <summary>
+        /// Повторение по правилу для личного: «Скрыть» — только время, «Не копировать» — как удалённое. Свои категории
+        /// скрытого повторения не переносятся: у него категории серии (у личной серии их нет). Серия обычная — её категории
+        /// и так видны на остальных повторениях, а снять их у одного повторения Exchange 2007 не позволяет.
+        /// </summary>
         private static SourceException PrepareException(SourceException exception, PrivateEvents privateEvents)
         {
             if (exception.IsDeleted)
@@ -292,7 +321,7 @@ namespace IwoBridge.Core.Sync
     /// <summary>Что делать с личными (Private) событиями источника.</summary>
     public enum PrivateEvents
     {
-        /// <summary>Копировать время и занятость, тему — «Личное»; без места, описания и вложений.</summary>
+        /// <summary>Копировать время и занятость, тему — «Личное»; без места, описания, вложений и категорий.</summary>
         HideDetails,
 
         /// <summary>Копировать полностью (копия тоже личная: в общем доступе коллеги видят только «занято»).</summary>

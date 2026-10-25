@@ -353,6 +353,80 @@ namespace IwoBridge.Wpf.Tests
         }
 
         [Fact]
+        public async Task AllTime_ReadsWholeCalendar_ChooseDates_ReturnsToDays()
+        {
+            var past = new SourceItem("past", "Давнее", null, null, new DateTime(2001, 3, 1, 9, 0, 0, DateTimeKind.Utc), new DateTime(2001, 3, 1, 10, 0, 0, DateTimeKind.Utc));
+            var future = new SourceItem("future", "Далёкое", null, null, new DateTime(2090, 3, 1, 9, 0, 0, DateTimeKind.Utc), new DateTime(2090, 3, 1, 10, 0, 0, DateTimeKind.Utc));
+            (CopyViewModel vm, _, _) = Create(null, Item("a", 10), past, future);
+            await vm.PreviewCommand.ExecuteAsync();
+            Assert.Equal(1, vm.RowCount);
+
+            vm.SetAllTimeCommand.Execute(null);
+
+            Assert.True(vm.IsAllTime);
+            Assert.False(vm.HasPreview); // другой период — прежний предпросмотр сброшен
+            Assert.False(vm.SetAllTimeCommand.CanExecute(null));
+            Assert.Equal(IwoBridge.Core.Time.TargetTimeZone.MinPeriodDate, vm.PeriodStart);
+            Assert.Equal(IwoBridge.Core.Time.TargetTimeZone.MaxPeriodDate, vm.PeriodEnd);
+            await vm.PreviewCommand.ExecuteAsync();
+            Assert.Equal(3, vm.RowCount);
+
+            vm.ChooseDatesCommand.Execute(null);
+
+            Assert.False(vm.IsAllTime);
+            Assert.Equal(new DateTime(2026, 1, 1), vm.PeriodStart);
+            Assert.Equal(new DateTime(2026, 1, 31), vm.PeriodEnd);
+        }
+
+        [Fact]
+        public void AllTime_OtherPresetOrDate_TurnsItOff()
+        {
+            (CopyViewModel vm, _, _) = Create(null);
+            vm.IsAllTime = true;
+
+            vm.SetThisYearCommand.Execute(null);
+            Assert.False(vm.IsAllTime);
+            Assert.Equal(new DateTime(2026, 1, 1), vm.PeriodStart);
+            Assert.Equal(new DateTime(2026, 12, 31), vm.PeriodEnd);
+
+            vm.IsAllTime = true;
+            vm.PeriodEnd = new DateTime(2026, 2, 10);
+            Assert.False(vm.IsAllTime);
+            Assert.Equal(new DateTime(2026, 1, 1), vm.PeriodStart); // второй край — прежний, а не 1601 год
+            Assert.Equal(new DateTime(2026, 2, 10), vm.PeriodEnd);
+        }
+
+        [Fact]
+        public async Task Categories_ListedInPreview_WithSourceSwatches()
+        {
+            var colored = new SourceItem("c", "Бюджет", null, null, Utc(10, 9), Utc(10, 10), categories: new[] { "Красная категория", "Проект" });
+            (CopyViewModel vm, _, _) = Create(null);
+            var source = new InMemorySource("источник по EWS", new[] { colored, Item("plain", 11) })
+            {
+                CategoryColors = new Dictionary<string, CategoryColor> { ["Красная категория"] = CategoryColor.Red },
+            };
+            vm.SetEwsSource(new TestSession(new InMemoryCalendar(Array.Empty<InMemoryEvent>())) { SourceCalendar = source, TargetLabel = SourceMailbox });
+
+            await vm.PreviewCommand.ExecuteAsync();
+
+            Assert.True(vm.HasCategories);
+            Assert.Equal("Категории событий: 2 — как получить те же цвета", vm.CategoriesHeader);
+            Assert.Equal(new[] { "Красная категория", "Проект" }, vm.Categories.Select(c => c.Name));
+            Assert.Equal(System.Windows.Media.Color.FromRgb(0xE7, 0xA1, 0xA2), ((System.Windows.Media.SolidColorBrush)vm.Categories[0].Swatch!).Color);
+            Assert.False(vm.Categories[1].HasSwatch);
+
+            vm.PeriodEnd = new DateTime(2026, 2, 28);
+            Assert.False(vm.HasCategories);
+        }
+
+        [Fact]
+        public void PeriodText_AllTime_ForHistoryAndConsole()
+        {
+            Assert.Equal("всё время", OperationHistory.Period(IwoBridge.Core.Time.TargetTimeZone.MinPeriodDate, IwoBridge.Core.Time.TargetTimeZone.MaxPeriodDate));
+            Assert.Equal("01.01.2026 – 31.01.2026", OperationHistory.Period(new DateTime(2026, 1, 1), new DateTime(2026, 1, 31)));
+        }
+
+        [Fact]
         public async Task InvalidPeriod_Explained_NothingRead()
         {
             (CopyViewModel vm, _, _) = Create(null, Item("a", 10));

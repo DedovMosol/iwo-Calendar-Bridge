@@ -135,6 +135,10 @@ namespace IwoBridge.Wpf.ViewModels
             return text.ToString();
         }
 
+        /// <summary>Заголовок подсказки о категориях: «Категории событий: 3 — как получить те же цвета».</summary>
+        internal static string CategoriesHeader(int count) =>
+            "Категории событий: " + RussianText.Number(count) + " — как получить те же цвета";
+
         internal static IReadOnlyList<CopyRow> BuildRows(CopyPreview preview, TargetTimeZone zone)
         {
             return preview.Plan.Actions.Select(action =>

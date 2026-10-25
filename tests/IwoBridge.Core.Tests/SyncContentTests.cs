@@ -53,6 +53,31 @@ namespace IwoBridge.Core.Tests
                 Make(body: "Строка 1  \nСтрока 2\n\n", attachments: new[] { b, a }, exceptions: new[] { "y", "x" }).Hash);
         }
 
+        /// <summary>
+        /// Отпечаток события без категорий тот же, что до их переноса: иначе после обновления программы все копии
+        /// перезаписались бы без изменений в источнике (а серии — пересоздались).
+        /// </summary>
+        [Fact]
+        public void Hash_WithoutCategories_SameAsBefore()
+        {
+            DateTime original = new DateTime(2026, 10, 12, 6, 0, 0, DateTimeKind.Utc);
+            var series = new SourceItem(
+                "s", "Планёрка", "Зал", "Повестка", original.AddDays(-7), original.AddDays(-7).AddHours(1),
+                recurrence: new RecurrenceRule(RecurrencePattern.Weekly, 1, original.AddDays(-7).Date, days: WeekDays.Monday),
+                exceptions: new[]
+                {
+                    new SourceException(original, false, original.AddHours(1), original.AddHours(2), "Перенос", "Зал 2", "Текст"),
+                    new SourceException(original.AddDays(7), true),
+                    new SourceException(original.AddDays(14), false, original.AddDays(14), original.AddDays(14).AddHours(1), "Врач", "Поликлиника", null, isPrivate: true),
+                });
+
+            // Значения записаны версией 0.13.0 (до переноса категорий).
+            Assert.Equal("v1:9514D70E5F9A0EB5DFC9BA2605A07347882A7B3C19104C273E00CF0FCEE6B09C", Basic().Hash);
+            Assert.Equal("v1:ED133418689E0A828EA0273B47E83591EF944E4417A68A0460634AF8BCD9AB9A", series.ContentHash);
+            Assert.Equal("v1:8BD4A15DE63617063643BFEC0E11ED5CB37A8629F775EE12EE8CA398E0F518F9", CopyRules.Prepare(series, PrivateEvents.HideDetails)!.ContentHash);
+            Assert.Equal(series.ContentHash, WithCategories(series, Array.Empty<string>()).ContentHash);
+        }
+
         [Fact]
         public void Hash_FieldBoundariesUnambiguous()
         {
@@ -66,6 +91,25 @@ namespace IwoBridge.Core.Tests
 
             Assert.Equal(Basic().Hash, Make(start: local, end: local.AddHours(1)).Hash);
         }
+
+        [Fact]
+        public void Hash_Categories_ChangeIt_OrderAndRepeatsDoNot()
+        {
+            string none = Basic().Hash;
+            string red = new SyncContent("Планёрка", "Зал 1", "Повестка", Start, Start.AddHours(1), false, "Busy", categories: new[] { "Красная категория" }).Hash;
+            string both = new SyncContent("Планёрка", "Зал 1", "Повестка", Start, Start.AddHours(1), false, "Busy", categories: new[] { "Красная категория", "Проект" }).Hash;
+            string reordered = new SyncContent(
+                "Планёрка", "Зал 1", "Повестка", Start, Start.AddHours(1), false, "Busy", categories: new[] { " Проект ", "Красная категория", "проект", "" }).Hash;
+
+            Assert.NotEqual(none, red);
+            Assert.NotEqual(red, both);
+            Assert.Equal(both, reordered);
+        }
+
+        /// <summary>То же событие с другими категориями (у серии — и у повторений, как прочитал источник).</summary>
+        internal static SourceItem WithCategories(SourceItem item, string[] categories) => new SourceItem(
+            item.SourceId, item.Subject, item.Location, item.Body, item.StartUtc, item.EndUtc, item.IsAllDay, item.Busy, item.Sensitivity, item.Recurrence,
+            item.SeriesEndUtc, item.Exceptions, item.Attachments, item.RtfCompressed, categories);
 
         private static SyncContent Basic() => Make();
 

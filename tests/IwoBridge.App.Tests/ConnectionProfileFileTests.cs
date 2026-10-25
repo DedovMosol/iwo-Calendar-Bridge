@@ -3,6 +3,7 @@ using System.IO;
 using System.Text;
 using IwoBridge.App.Configuration;
 using IwoBridge.Core.Configuration;
+using IwoBridge.Core.Time;
 using Xunit;
 
 namespace IwoBridge.App.Tests
@@ -57,6 +58,29 @@ namespace IwoBridge.App.Tests
             Assert.Equal(new DateTime(2025, 9, 1), past.Window(new DateTime(2026, 10, 6)).First);
             Assert.Equal(new DateTime(2025, 12, 10), past.Window(new DateTime(2026, 10, 6)).Last);
             Assert.Equal(-5, new CopySettings(daysBack: 5, daysForward: -20).DaysForward); // конец не раньше начала
+        }
+
+        [Fact]
+        public void CopySettings_AllTime_WholeSupportedRange_DaysKept_RoundTrip()
+        {
+            Directory.CreateDirectory(_directory);
+            string path = Path.Combine(_directory, "copy.json");
+            var settings = new CopySettings(daysBack: 10, daysForward: 20, allTime: true);
+
+            Assert.Equal((TargetTimeZone.MinPeriodDate, TargetTimeZone.MaxPeriodDate), settings.Window(new DateTime(2026, 10, 6)));
+
+            CopySettingsFile.Save(path, settings);
+            CopySettings read = CopySettingsFile.Load(path);
+            Assert.True(read.AllTime);
+            Assert.Equal(10, read.DaysBack);
+            Assert.Equal(20, read.DaysForward);
+            Assert.Contains("\"allTime\":true", File.ReadAllText(path).Replace(" ", string.Empty), StringComparison.Ordinal);
+
+            // Файл прежней версии (без поля) — период по дням, как раньше.
+            File.WriteAllText(path, "{\"source\":\"ews\",\"daysBack\":3,\"daysForward\":4}");
+            CopySettings old = CopySettingsFile.Load(path);
+            Assert.False(old.AllTime);
+            Assert.Equal((new DateTime(2026, 10, 3), new DateTime(2026, 10, 10)), old.Window(new DateTime(2026, 10, 6)));
         }
 
         [Fact]
