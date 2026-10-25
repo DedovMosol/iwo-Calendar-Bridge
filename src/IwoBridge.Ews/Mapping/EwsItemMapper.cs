@@ -25,7 +25,8 @@ namespace IwoBridge.Ews.Mapping
             DateTime? firstOccurrenceUtc,
             DateTime? lastOccurrenceUtc,
             string? bridgeSourceId,
-            string? subject)
+            string? subject,
+            bool isAllDay = false)
         {
             return new TargetItemInfo(
                 itemId,
@@ -37,7 +38,8 @@ namespace IwoBridge.Ews.Mapping
                 isRecurringMaster ? firstOccurrenceUtc : null,
                 isRecurringMaster ? lastOccurrenceUtc : null,
                 bridgeSourceId,
-                subject: subject);
+                subject: subject,
+                isAllDay: isAllDay);
         }
 
         /// <summary>
@@ -50,11 +52,12 @@ namespace IwoBridge.Ews.Mapping
             DateTime startUtc,
             DateTime endUtc,
             AppointmentType appointmentType,
-            string? subject)
+            string? subject,
+            bool isAllDay = false)
         {
             bool isSeriesInstance =
                 appointmentType == AppointmentType.Occurrence || appointmentType == AppointmentType.Exception;
-            return new TargetOccurrence(occurrenceItemId, seriesUid, startUtc, endUtc, isSeriesInstance, subject);
+            return new TargetOccurrence(occurrenceItemId, seriesUid, startUtc, endUtc, isSeriesInstance, subject, isAllDay);
         }
     }
 }

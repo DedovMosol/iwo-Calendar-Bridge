@@ -47,15 +47,26 @@ namespace IwoBridge.Outlook
         private static readonly TimeSpan Slack = TimeSpan.FromDays(1);
         private static readonly CultureInfo Russian = CultureInfo.GetCultureInfo("ru-RU");
 
+        private const int OlPrivate = 2;
+        private const int OlConfidential = 3;
+
         private readonly OutlookSession _session;
         private readonly OutlookCalendarRef _calendar;
         private readonly object _sync = new object();
         private Dictionary<string, string> _entryBySource = new Dictionary<string, string>(StringComparer.Ordinal);
 
+        // Хранилище папки, открытой последним чтением: общий календарь, открытый заново по имени владельца, может лежать в
+        // хранилище с другим идентификатором, чем запомненный.
+        private string _storeId;
+
+        // Номер последнего начатого чтения: итог более старого (например, вернувшегося после зависания) не затирает новый.
+        private int _generation;
+
         public OutlookSource(OutlookSession session, OutlookCalendarRef calendar)
         {
             _session = session;
             _calendar = calendar;
+            _storeId = calendar.StoreId;
         }
 
         public string Label => "Outlook: " + _calendar.Label;
@@ -90,21 +101,25 @@ namespace IwoBridge.Outlook
             var referenced = new HashSet<string>(referencedSourceIds ?? Array.Empty<string>(), StringComparer.OrdinalIgnoreCase);
             DateTime from = TimeMapper.ToUtc(windowStartUtc) - Slack;
             DateTime to = TimeMapper.ToUtc(windowEndUtc) + Slack;
+            int generation = Interlocked.Increment(ref _generation);
             return _session.RunAsync(
                 ns =>
                 {
                     List<Row> rows;
+                    string storeId;
                     dynamic folder = OutlookSession.OpenFolder((object)ns, _calendar);
                     try
                     {
-                        rows = ReadTable(folder);
+                        storeId = (string)folder.StoreID;
+                        rows = ReadTable(folder, cancellationToken);
                     }
                     finally
                     {
                         Com.Release(folder);
                     }
 
-                    Row[] chosen = rows.Where(r => referenced.Contains(r.GlobalId) || TimeWindow.Overlaps(r.Start, r.SpanEnd, from, to)).ToArray();
+                    // У события без глобального идентификатора копия помечена его EntryID — запрошенное ищется и по нему.
+                    Row[] chosen = rows.Where(r => referenced.Contains(r.GlobalId) || referenced.Contains(r.EntryId) || TimeWindow.Overlaps(r.Start, r.SpanEnd, from, to)).ToArray();
                     var items = new List<SourceItem>(chosen.Length);
                     var entries = new Dictionary<string, string>(StringComparer.Ordinal);
                     int unreadable = 0;
@@ -113,7 +128,8 @@ namespace IwoBridge.Outlook
                     foreach (Row row in chosen)
                     {
                         cancellationToken.ThrowIfCancellationRequested();
-                        SourceItem? item = ReadItem((object)ns, row, _calendar.StoreId, warnings, out string? failure);
+                        StaWorker.Touch();
+                        SourceItem? item = ReadItem((object)ns, row, storeId, warnings, out string? failure);
                         if (item is null)
                         {
                             unreadable++;
@@ -133,7 +149,11 @@ namespace IwoBridge.Outlook
 
                     lock (_sync)
                     {
-                        _entryBySource = entries;
+                        if (generation == _generation)
+                        {
+                            _entryBySource = entries;
+                            _storeId = storeId;
+                        }
                     }
 
                     return new SourceRead(
@@ -152,9 +172,11 @@ namespace IwoBridge.Outlook
             }
 
             string? entryId;
+            string storeId;
             lock (_sync)
             {
                 _entryBySource.TryGetValue(item.SourceId, out entryId);
+                storeId = _storeId;
             }
 
             if (entryId is null)
@@ -170,7 +192,7 @@ namespace IwoBridge.Outlook
                     dynamic? appointment = null, attachments = null;
                     try
                     {
-                        appointment = ns.GetItemFromID(entryId, _calendar.StoreId);
+                        appointment = ns.GetItemFromID(entryId, storeId);
                         attachments = appointment.Attachments;
                         Directory.CreateDirectory(temp);
                         int count = (int)attachments.Count;
@@ -193,6 +215,8 @@ namespace IwoBridge.Outlook
                             {
                                 Com.Release(attachment);
                             }
+
+                            StaWorker.Touch();
                         }
                     }
                     finally
@@ -222,7 +246,7 @@ namespace IwoBridge.Outlook
             }
         }
 
-        private static List<Row> ReadTable(dynamic folder)
+        private static List<Row> ReadTable(dynamic folder, CancellationToken cancellationToken)
         {
             var rows = new List<Row>();
             dynamic? table = null, columns = null;
@@ -231,15 +255,16 @@ namespace IwoBridge.Outlook
                 table = folder.GetTable();
                 columns = table.Columns;
                 columns.RemoveAll();
-                columns.Add("EntryID");
-                columns.Add(StartProp);
-                columns.Add(EndProp);
-                columns.Add(RecurringProp);
-                columns.Add(ClipEndProp);
-                columns.Add(GlobalIdProp);
+                foreach (string property in new[] { "EntryID", StartProp, EndProp, RecurringProp, ClipEndProp, GlobalIdProp })
+                {
+                    Com.Release(columns.Add(property)); // Add возвращает объект столбца — он не нужен
+                }
+
                 bool marks = TryAddColumn(columns, BridgeMarkProp);
                 while (!(bool)table.EndOfTable)
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    StaWorker.Touch();
                     dynamic row = table.GetNextRow();
                     try
                     {
@@ -276,10 +301,10 @@ namespace IwoBridge.Outlook
             // expected range», проверено вживую).
             try
             {
-                columns.Add(property);
+                Com.Release(columns.Add(property));
                 return true;
             }
-            catch (Exception ex) when (ex is COMException || ex is ArgumentException)
+            catch (Exception ex) when ((ex is COMException || ex is ArgumentException) && !OutlookSession.IsFatal(ex))
             {
                 return false;
             }
@@ -329,9 +354,11 @@ namespace IwoBridge.Outlook
                     sourceId, subject, (string)appointment.Location, body, start, end, allDay, busy, sensitivity, rule, seriesEnd, exceptions, attachments, rtf);
             }
 #pragma warning disable CA1031 // Непрочитанное событие делает чтение неполным (без удалений), но не обрывает его.
-            catch (Exception ex)
+            catch (Exception ex) when (!OutlookSession.IsFatal(ex))
 #pragma warning restore CA1031
             {
+                // Сбой всего Outlook (закрыт, упал, занят) сюда не попадает: чтение прерывается целиком и повторяется после
+                // переподключения, а не помечает все оставшиеся события непрочитанными.
                 failure = step + ": " + ex.Message;
                 return null;
             }
@@ -400,9 +427,10 @@ namespace IwoBridge.Outlook
                 DateTime? seriesEnd = null;
                 if (!p.NoEndDate)
                 {
-                    // Конец последнего повторения: дата окончания правила + время конца события (местное время Outlook).
-                    DateTime lastEndLocal = p.PatternEndDate.Date + ((DateTime)pattern.EndTime).TimeOfDay;
-                    seriesEnd = TimeZoneInfo.ConvertTimeToUtc(DateTime.SpecifyKind(lastEndLocal, DateTimeKind.Unspecified), TimeZoneInfo.Local);
+                    // Конец последнего повторения: его начало (дата окончания правила + время начала) плюс длительность —
+                    // а не время конца в тот же день: у события через полночь и «на весь день» конец — на следующие сутки.
+                    DateTime lastStartLocal = p.PatternEndDate.Date + ((DateTime)pattern.StartTime).TimeOfDay;
+                    seriesEnd = LocalToUtc(lastStartLocal.AddMinutes((int)pattern.Duration));
                     if (seriesEnd < end)
                     {
                         seriesEnd = end;
@@ -436,18 +464,18 @@ namespace IwoBridge.Outlook
         private static SourceException ReadException(dynamic exception, string subject, List<string> warnings)
         {
             DateTime originalLocal = (DateTime)exception.OriginalDate;
-            DateTime original = TimeZoneInfo.ConvertTimeToUtc(DateTime.SpecifyKind(originalLocal, DateTimeKind.Unspecified), TimeZoneInfo.Local);
-            if ((bool)exception.Deleted)
-            {
-                return new SourceException(original, true);
-            }
-
+            DateTime original = LocalToUtc(originalLocal);
             dynamic changed;
             try
             {
+                if ((bool)exception.Deleted)
+                {
+                    return new SourceException(original, true);
+                }
+
                 changed = exception.AppointmentItem;
             }
-            catch (COMException)
+            catch (COMException ex) when (!OutlookSession.IsFatal(ex))
             {
                 // Повреждённое исключение серии: Outlook его не открывает ни через исключение, ни через GetOccurrence
                 // (проверено вживую на общем календаре). Копия без него — как без удалённого повторения; остальная серия
@@ -459,6 +487,7 @@ namespace IwoBridge.Outlook
 
             try
             {
+                int sensitivity = (int)changed.Sensitivity;
                 return new SourceException(
                     original,
                     false,
@@ -466,12 +495,30 @@ namespace IwoBridge.Outlook
                     TimeMapper.ToUtc((DateTime)changed.EndUTC),
                     (string)changed.Subject,
                     (string)changed.Location,
-                    (string)changed.Body);
+                    (string)changed.Body,
+                    isPrivate: sensitivity == OlPrivate || sensitivity == OlConfidential);
             }
             finally
             {
                 Com.Release(changed);
             }
+        }
+
+        /// <summary>
+        /// Местное время Outlook → UTC. Время, которого в поясе компьютера не было (час перевода стрелок вперёд, например
+        /// в старых сериях до 2011 года), сдвигается на час вперёд — так его показывает и Outlook, а не обрывает чтение серии.
+        /// </summary>
+        internal static DateTime LocalToUtc(DateTime local) => LocalToUtc(local, TimeZoneInfo.Local);
+
+        internal static DateTime LocalToUtc(DateTime local, TimeZoneInfo zone)
+        {
+            DateTime value = DateTime.SpecifyKind(local, DateTimeKind.Unspecified);
+            if (zone.IsInvalidTime(value))
+            {
+                value = value.AddHours(1);
+            }
+
+            return TimeZoneInfo.ConvertTimeToUtc(value, zone);
         }
 
         /// <summary>RTF описания; <c>null</c> — Outlook 2007 (свойство RTFBody появилось в Outlook 2010) или описание недоступно.</summary>
@@ -481,8 +528,9 @@ namespace IwoBridge.Outlook
             {
                 return appointment.RTFBody as byte[];
             }
-#pragma warning disable CA1031 // Нет RTF — переносится текст описания.
-            catch (Exception)
+#pragma warning disable CA1031 // Нет RTF — переносится текст описания. Сбой всего Outlook не глотается: копия без
+            // оформления дала бы перезапись на этом прогоне и обратную на следующем.
+            catch (Exception ex) when (!OutlookSession.IsFatal(ex))
 #pragma warning restore CA1031
             {
                 return null;

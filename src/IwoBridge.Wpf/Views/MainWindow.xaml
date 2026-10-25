@@ -23,6 +23,7 @@
         <KeyBinding Key="F5" Command="{Binding PreviewCommand}" />
         <KeyBinding Key="Escape" Command="{Binding StopCommand}" />
         <KeyBinding Key="F1" Command="{Binding HelpCommand}" />
+        <KeyBinding Key="H" Modifiers="Control" Command="{Binding HistoryCommand}" />
     </Window.InputBindings>
 
     <DockPanel>
@@ -32,6 +33,7 @@
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
@@ -50,7 +52,10 @@
                         AutomationProperties.AutomationId="EditSourceButton"
                         Command="{Binding EditSourceCommand}"
                         ToolTip="Необязательно: откуда копировать, если не из Outlook этого компьютера, — другой сервер Exchange по EWS." />
-                <Button Grid.Column="4" Margin="8,0,0,0" Content="Сп_равка" VerticalAlignment="Center"
+                <Button Grid.Column="4" Margin="8,0,0,0" Content="История" VerticalAlignment="Center"
+                        Command="{Binding HistoryCommand}" AutomationProperties.AutomationId="HistoryButton"
+                        ToolTip="Журнал операций: когда, что скопировано или удалено, сколько, с каким итогом. (Ctrl+H)" />
+                <Button Grid.Column="5" Margin="8,0,0,0" Content="Сп_равка" VerticalAlignment="Center"
                         Command="{Binding HelpCommand}" AutomationProperties.AutomationId="HelpButton"
                         ToolTip="Как пользоваться программой — по шагам. (F1)" />
             </Grid>
@@ -84,7 +89,7 @@
 
                         <!-- Нет подключения -->
                         <Border Style="{StaticResource Card}"
-                                Visibility="{Binding HasSession, Converter={StaticResource VisibleWhen}, ConverterParameter=invert}">
+                                Visibility="{Binding DataContext.HasCleanupChoices, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource VisibleWhen}, ConverterParameter=invert}">
                             <StackPanel>
                                 <TextBlock Style="{StaticResource SectionText}" Text="Подключение не настроено" />
                                 <TextBlock TextWrapping="Wrap"
@@ -92,9 +97,10 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- Шаг 1. Какой ящик и что удалить -->
+                        <!-- Шаг 1. Какой ящик и что удалить. Виден, пока в списке есть ящики: выбранная почта без пароля
+                             не прячет список и кнопку «Изменить…». -->
                         <Border Style="{StaticResource Card}"
-                                Visibility="{Binding HasSession, Converter={StaticResource VisibleWhen}}">
+                                Visibility="{Binding DataContext.HasCleanupChoices, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource VisibleWhen}}">
                             <StackPanel>
                                 <!-- Заголовок и выбор ящика — одной строкой (приёмник или источник по EWS). -->
                                 <Grid Margin="0,0,0,8">
@@ -120,7 +126,12 @@
                                                 Visibility="{Binding DataContext.CanAddMailboxes, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource VisibleWhen}}"
                                                 AutomationProperties.AutomationId="AddMailboxButton"
                                                 ToolTip="Подключить ещё один ящик по EWS и очищать его календарь" />
-                                        <Button Style="{StaticResource LinkButton}" Content="Убрать из списка" Margin="16,0,0,0"
+                                        <Button Style="{StaticResource LinkButton}" Content="Изме_нить…" Margin="16,0,0,0"
+                                                Command="{Binding DataContext.EditMailboxCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                Visibility="{Binding DataContext.CanRemoveMailbox, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource VisibleWhen}}"
+                                                AutomationProperties.AutomationId="EditMailboxButton"
+                                                ToolTip="Другой пароль, учётная запись или адрес выбранной почты" />
+                                        <Button Style="{StaticResource LinkButton}" Content="У_брать из списка" Margin="16,0,0,0"
                                                 Command="{Binding DataContext.RemoveMailboxCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                                 Visibility="{Binding DataContext.CanRemoveMailbox, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource VisibleWhen}}"
                                                 AutomationProperties.AutomationId="RemoveMailboxButton"
@@ -128,7 +139,12 @@
                                     </StackPanel>
                                 </Grid>
 
-                                <StackPanel IsEnabled="{Binding IsIdle}">
+                                <!-- Выбрана почта без сохранённого пароля: подключения нет, остальное недоступно до «Изменить…». -->
+                                <TextBlock Style="{StaticResource HintText}" Margin="0,0,0,8"
+                                           Visibility="{Binding HasSession, Converter={StaticResource VisibleWhen}, ConverterParameter=invert}"
+                                           Text="Пароль этой почты не сохранён. Нажмите «Изменить…» и введите его, чтобы очищать её календарь." />
+
+                                <StackPanel IsEnabled="{Binding IsIdle}" Visibility="{Binding HasSession, Converter={StaticResource VisibleWhen}}">
                                     <RadioButton GroupName="Scope" IsChecked="{Binding IsPeriod}" Content="События за п_ериод"
                                                  ToolTip="События, которые хотя бы частично попадают в период. У повторяющихся серий на границе удаляются только экземпляры внутри периода." />
                                     <WrapPanel Margin="26,2,0,0">

@@ -56,14 +56,32 @@ namespace IwoBridge.Outlook
         private const int OlAppointmentItem = 1;
         private const int OlModuleCalendar = 1;
 
-        // Outlook ушёл: сервер RPC недоступен, объект отключён от клиентов, вызов отклонён отключившимся сервером.
-        private static readonly int[] Disconnected = { unchecked((int)0x800706BA), unchecked((int)0x80010108), unchecked((int)0x800401FD), unchecked((int)0x80010114) };
+        // Outlook ушёл: сервер RPC недоступен (0x800706BA), объект отключён от клиентов (0x80010108, 0x800401FD), вызов
+        // отклонён отключившимся сервером (0x80010114), сервер RPC завершился во время вызова (0x80010007, 0x80010012),
+        // вызов RPC не выполнен (0x800706BE).
+        private static readonly int[] Disconnected =
+        {
+            unchecked((int)0x800706BA), unchecked((int)0x80010108), unchecked((int)0x800401FD), unchecked((int)0x80010114),
+            unchecked((int)0x80010007), unchecked((int)0x80010012), unchecked((int)0x800706BE),
+        };
 
         private const int ObjectUnavailable = unchecked((int)0x800401E3); // MK_E_UNAVAILABLE: нет в таблице запущенных объектов
+        private const int CallRejected = unchecked((int)0x80010001); // RPC_E_CALL_REJECTED: Outlook занят дольше минуты
 
         private readonly object _sync = new object();
         private StaWorker _worker = new StaWorker();
-        private dynamic? _app;
+
+        // Последний зависший поток: пока он жив, второй зависший поток не заводится — вызовы сразу получают ошибку.
+        private StaWorker? _hung;
+
+        /// <summary>
+        /// Сбой не одного события, а всего Outlook: он закрыт, упал или занят. Чтение такого сбоя не глотает по событию —
+        /// оно прерывается целиком (и после переподключения повторяется), а не считает все оставшиеся события непрочитанными.
+        /// </summary>
+        internal static bool IsFatal(Exception exception) =>
+            exception is InvalidComObjectException
+            || exception is OutlookBusyException
+            || (exception is COMException com && (com.ErrorCode == CallRejected || Array.IndexOf(Disconnected, com.ErrorCode) >= 0));
 
         /// <summary>Установлен ли Outlook на компьютере (без запуска).</summary>
         public static bool IsInstalled => Type.GetTypeFromProgID("Outlook.Application") != null;
@@ -116,7 +134,7 @@ namespace IwoBridge.Outlook
                                 }
                             }
 #pragma warning disable CA1031 // Ящик без календаря или недоступный (архив, отключённый общий ящик) просто не показывается.
-                            catch (Exception)
+                            catch (Exception ex) when (!IsFatal(ex))
 #pragma warning restore CA1031
                             {
                             }
@@ -126,6 +144,8 @@ namespace IwoBridge.Outlook
                                 Com.Release(calendar);
                                 Com.Release(store);
                             }
+
+                            StaWorker.Touch();
                         }
                     }
                     finally
@@ -192,8 +212,7 @@ namespace IwoBridge.Outlook
                 worker.RunAsync(
                     () =>
                     {
-                        Com.Release(_app);
-                        _app = null;
+                        Forget(worker);
                         return true;
                     },
                     TimeSpan.FromSeconds(5),
@@ -204,7 +223,8 @@ namespace IwoBridge.Outlook
         }
 
         /// <summary>
-        /// Вызов Outlook в потоке STA. Outlook перезапускали — один повтор с новым подключением; поток завис — новый поток.
+        /// Вызов Outlook в потоке STA. Outlook перезапускали — один повтор с новым подключением; поток завис — новый поток
+        /// (но не больше одного зависшего сразу: если и прежний ещё не вернулся, Outlook явно не отвечает).
         /// </summary>
         internal Task<T> RunAsync<T>(Func<dynamic, T> work, CancellationToken cancellationToken)
         {
@@ -213,10 +233,17 @@ namespace IwoBridge.Outlook
             {
                 if (_worker.IsBroken)
                 {
-                    // Объект Outlook принадлежит зависшему потоку: здесь он не освобождается, а забывается.
+                    if (_hung != null && _hung.IsAlive)
+                    {
+                        return Task.FromException<T>(new TimeoutException(
+                            "Outlook не отвечает: прежние обращения к нему ещё не вернулись. Проверьте, нет ли в Outlook открытого окна "
+                            + "с вопросом, или перезапустите Outlook."));
+                    }
+
+                    // Объект Outlook принадлежит зависшему потоку и остаётся у него: новый поток подключается заново.
+                    _hung = _worker;
                     _worker.Dispose();
                     _worker = new StaWorker();
-                    _app = null;
                 }
 
                 worker = _worker;
@@ -227,17 +254,21 @@ namespace IwoBridge.Outlook
                 {
                     try
                     {
-                        return CallOnce(work);
+                        return CallOnce(worker, work);
                     }
                     catch (COMException ex) when (Array.IndexOf(Disconnected, ex.ErrorCode) >= 0)
                     {
-                        Forget();
-                        return CallOnce(work);
+                        Forget(worker);
+                        return CallOnce(worker, work);
                     }
                     catch (InvalidComObjectException)
                     {
-                        Forget();
-                        return CallOnce(work);
+                        Forget(worker);
+                        return CallOnce(worker, work);
+                    }
+                    catch (COMException ex) when (ex.ErrorCode == CallRejected)
+                    {
+                        throw new OutlookBusyException(ex);
                     }
                 },
                 CallTimeout,
@@ -254,15 +285,15 @@ namespace IwoBridge.Outlook
             {
                 return ns.GetFolderFromID(calendar.EntryId, calendar.StoreId);
             }
-            catch (COMException) when (calendar.Owner != null)
+            catch (COMException ex) when (calendar.Owner != null && !IsFatal(ex))
             {
                 return SharedCalendar((object)ns, calendar.Owner!, out _);
             }
         }
 
-        private T CallOnce<T>(Func<dynamic, T> work)
+        private static T CallOnce<T>(StaWorker worker, Func<dynamic, T> work)
         {
-            dynamic ns = Namespace();
+            dynamic ns = Namespace(worker);
             try
             {
                 return work(ns);
@@ -273,10 +304,10 @@ namespace IwoBridge.Outlook
             }
         }
 
-        private void Forget()
+        private static void Forget(StaWorker worker)
         {
-            Com.Release(_app);
-            _app = null;
+            Com.Release(worker.App);
+            worker.App = null;
         }
 
         private static dynamic SharedCalendar(dynamic ns, string owner, out string resolved)
@@ -313,12 +344,13 @@ namespace IwoBridge.Outlook
         /// что отмечен в панели (IsSelected): идентификатор CurrentFolder окна у общих календарей длинный и строкой не
         /// совпадает с идентификатором той же папки в панели (проверено вживую).
         /// </summary>
-        private void AddNavigationPane(dynamic ns, List<OutlookCalendarRef> list)
+        private static void AddNavigationPane(dynamic ns, List<OutlookCalendarRef> list)
         {
-            dynamic? explorer = null, pane = null, modules = null, module = null, groups = null;
+            dynamic? app = null, explorer = null, pane = null, modules = null, module = null, groups = null;
             try
             {
-                explorer = _app!.ActiveExplorer();
+                app = ns.Application;
+                explorer = app.ActiveExplorer();
                 if (explorer is null)
                 {
                     return;
@@ -331,10 +363,11 @@ namespace IwoBridge.Outlook
                 int groupCount = (int)groups.Count;
                 for (int g = 1; g <= groupCount; g++)
                 {
-                    dynamic group = groups.Item(g);
-                    dynamic folders = group.NavigationFolders;
+                    dynamic? group = null, folders = null;
                     try
                     {
+                        group = groups.Item(g);
+                        folders = group.NavigationFolders;
                         string groupName = (string)group.Name;
                         int count = (int)folders.Count;
                         for (int f = 1; f <= count; f++)
@@ -347,7 +380,7 @@ namespace IwoBridge.Outlook
                                 Add((object)ns, list, (string)navigation.DisplayName + " — " + groupName, folder, (bool)navigation.IsSelected);
                             }
 #pragma warning disable CA1031 // Недоступный общий календарь (нет прав, сервер владельца недоступен) просто не показывается.
-                            catch (Exception)
+                            catch (Exception ex) when (!IsFatal(ex))
 #pragma warning restore CA1031
                             {
                             }
@@ -356,7 +389,14 @@ namespace IwoBridge.Outlook
                                 Com.Release(folder);
                                 Com.Release(navigation);
                             }
+
+                            StaWorker.Touch();
                         }
+                    }
+#pragma warning disable CA1031 // Группа панели не открылась — остальные группы читаются.
+                    catch (Exception ex) when (!IsFatal(ex))
+#pragma warning restore CA1031
+                    {
                     }
                     finally
                     {
@@ -366,7 +406,7 @@ namespace IwoBridge.Outlook
                 }
             }
 #pragma warning disable CA1031 // Нет окна Outlook или панели (старая версия) — остаются календари ящиков профиля.
-            catch (Exception)
+            catch (Exception ex) when (!IsFatal(ex))
 #pragma warning restore CA1031
             {
             }
@@ -377,17 +417,18 @@ namespace IwoBridge.Outlook
                 Com.Release(modules);
                 Com.Release(pane);
                 Com.Release(explorer);
+                Com.Release(app);
             }
         }
 
-        private dynamic Namespace()
+        private static dynamic Namespace(StaWorker worker)
         {
-            if (_app is null)
+            if (worker.App is null)
             {
-                _app = Connect();
+                worker.App = Connect();
             }
 
-            return _app.GetNamespace("MAPI");
+            return ((dynamic)worker.App).GetNamespace("MAPI");
         }
 
         /// <summary>
@@ -424,15 +465,28 @@ namespace IwoBridge.Outlook
             }
         }
 
+        /// <summary>
+        /// Outlook запущен в сеансе этого пользователя. Процессы других сеансов (сервер терминалов, быстрое переключение
+        /// пользователей) не в счёт: создание объекта тогда запустило бы скрытый Outlook здесь.
+        /// </summary>
         private static bool OutlookProcessRunning()
         {
-            Process[] found = Process.GetProcessesByName("OUTLOOK");
-            foreach (Process process in found)
+            int session;
+            using (Process self = Process.GetCurrentProcess())
             {
-                process.Dispose();
+                session = self.SessionId;
             }
 
-            return found.Length > 0;
+            bool running = false;
+            foreach (Process process in Process.GetProcessesByName("OUTLOOK"))
+            {
+                using (process)
+                {
+                    running |= process.SessionId == session;
+                }
+            }
+
+            return running;
         }
 
         private static string FolderName(dynamic folder)
@@ -470,6 +524,15 @@ namespace IwoBridge.Outlook
     {
         public OutlookNotRunningException(Exception inner)
             : base("Outlook не запущен. Откройте Outlook на этом компьютере и нажмите «Обновить».", inner)
+        {
+        }
+    }
+
+    /// <summary>Outlook дольше минуты отклоняет обращения: в нём открыто окно или идёт долгая синхронизация.</summary>
+    public sealed class OutlookBusyException : Exception
+    {
+        public OutlookBusyException(Exception inner)
+            : base("Outlook занят: в нём открыто окно или идёт синхронизация. Закройте окно в Outlook и повторите.", inner)
         {
         }
     }

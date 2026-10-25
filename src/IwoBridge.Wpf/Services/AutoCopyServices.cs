@@ -108,14 +108,20 @@ namespace IwoBridge.Wpf.Services
             }
         }
 
-        /// <summary>Включён автозапуск, а путь к программе другой (папку перенесли) — записать текущий.</summary>
+        /// <summary>
+        /// Включён автозапуск, а программы по записанному пути больше нет (папку перенесли) — записать текущий путь.
+        /// Другая существующая копия программы (например, проверочная) автозапуск себе не забирает: запуск копии из
+        /// другой папки не должен молча менять, какая программа стартует с Windows.
+        /// </summary>
         public void Refresh()
         {
             try
             {
                 using (RegistryKey? key = Registry.CurrentUser.OpenSubKey(RunKey, writable: true))
                 {
-                    if (key?.GetValue(ValueName) is string current && !string.Equals(current, _command, StringComparison.OrdinalIgnoreCase))
+                    if (key?.GetValue(ValueName) is string current
+                        && !string.Equals(current, _command, StringComparison.OrdinalIgnoreCase)
+                        && !System.IO.File.Exists(ExecutableOf(current)))
                     {
                         key.SetValue(ValueName, _command, RegistryValueKind.String);
                     }
@@ -125,6 +131,20 @@ namespace IwoBridge.Wpf.Services
             {
                 Trace.TraceWarning("Автозапуск не обновлён: " + ex.Message);
             }
+        }
+
+        /// <summary>Путь к программе из команды автозапуска: <c>"путь" --tray</c> (или путь без кавычек).</summary>
+        internal static string ExecutableOf(string command)
+        {
+            string text = command.Trim();
+            if (text.StartsWith("\"", StringComparison.Ordinal))
+            {
+                int end = text.IndexOf('"', 1);
+                return end > 1 ? text.Substring(1, end - 1) : string.Empty;
+            }
+
+            int space = text.IndexOf(' ');
+            return space < 0 ? text : text.Substring(0, space);
         }
     }
 
@@ -140,12 +160,26 @@ namespace IwoBridge.Wpf.Services
     public sealed class FileCopySettingsStore : ICopySettingsStore
     {
         private readonly string _path;
+        private bool _readOk = true;
 
         public FileCopySettingsStore(string path) => _path = path ?? throw new ArgumentNullException(nameof(path));
 
-        public CopySettings Load() => CopySettingsFile.Load(_path);
+        public CopySettings Load()
+        {
+            _readOk = CopySettingsFile.TryLoad(_path, out CopySettings settings);
+            return settings;
+        }
 
-        public void Save(CopySettings settings) => CopySettingsFile.Save(_path, settings);
+        /// <summary>Файл не прочитался при запуске (занят, нет прав) — он не перезаписывается: в нём настройки человека.</summary>
+        public void Save(CopySettings settings)
+        {
+            if (!_readOk)
+            {
+                throw new System.IO.IOException("Файл настроек копирования не прочитался при запуске — он не перезаписывается, чтобы не потерять настройки.");
+            }
+
+            CopySettingsFile.Save(_path, settings);
+        }
     }
 
     /// <summary>В памяти — демонстрационный режим и тесты.</summary>

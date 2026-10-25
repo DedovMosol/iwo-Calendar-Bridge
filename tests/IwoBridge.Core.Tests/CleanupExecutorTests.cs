@@ -60,7 +60,7 @@ namespace IwoBridge.Core.Tests
         }
 
         [Fact]
-        public async Task PartialFailure_StopsAndDoesNotMask()
+        public async Task ItemRefused_OtherBatchesStillDeleted_FailureReported()
         {
             int batch = 0;
             var deleter = new FakeDeleter(ids =>
@@ -79,9 +79,32 @@ namespace IwoBridge.Core.Tests
             BatchDeleteOutcome outcome = await new CleanupExecutor(batchSize: 50).DeleteAllAsync(
                 Ids(150), deleter, TargetDeleteMode.MoveToDeletedItems, snapshotIsAuthoritative: true, CancellationToken.None);
 
+            // Один неудаляемый элемент не держит остальную очистку: третий пакет удалён, отказ — в итоге, не маскируется.
             Assert.False(outcome.IsSuccess);
-            Assert.Equal(2, deleter.BatchSizes.Count); // третий пакет не запрашивался
-            Assert.Equal(99, outcome.RemovedCount);    // 50 из первого пакета + 49 учтённых во втором
+            Assert.True(outcome.ReachedEnd);
+            Assert.Equal(1, outcome.RefusedCount);
+            Assert.Equal(3, deleter.BatchSizes.Count);
+            Assert.Equal(149, outcome.RemovedCount);
+            Assert.Contains("ErrorAccessDenied", outcome.Error);
+            Assert.Contains("1", outcome.Error);
+        }
+
+        [Fact]
+        public async Task ResultCountMismatch_Stops()
+        {
+            int batch = 0;
+            var deleter = new FakeDeleter(ids =>
+            {
+                batch++;
+                return ids.Skip(batch == 1 ? 1 : 0).Select(_ => DeleteResult.Removed()).ToList();
+            });
+
+            BatchDeleteOutcome outcome = await new CleanupExecutor(batchSize: 50).DeleteAllAsync(
+                Ids(150), deleter, TargetDeleteMode.MoveToDeletedItems, snapshotIsAuthoritative: true, CancellationToken.None);
+
+            Assert.False(outcome.IsSuccess);
+            Assert.False(outcome.ReachedEnd);
+            Assert.Single(deleter.BatchSizes);
         }
 
         [Fact]

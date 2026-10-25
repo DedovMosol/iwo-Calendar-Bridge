@@ -325,6 +325,63 @@ namespace IwoBridge.App.Tests
             Assert.Single(calendar.ItemIds());
         }
 
+        [Fact]
+        public async Task Run_ServerRefusesOneEvent_RestDeleted_BoundarySeriesStillTrimmed()
+        {
+            var calendar = new InMemoryCalendar(new[]
+            {
+                InMemoryEvent.Single("s-locked", Utc(2026, 1, 14), Utc(2026, 1, 14, 10)),
+                InMemoryEvent.Single("s-in", Utc(2026, 1, 15), Utc(2026, 1, 15, 10)),
+                InMemoryEvent.Master("m-bound", "U_B", new[]
+                {
+                    Occ("mb-0", Utc(2026, 1, 8)), Occ("mb-1", Utc(2026, 1, 12)), Occ("mb-2", Utc(2026, 1, 18)), Occ("mb-3", Utc(2026, 1, 22)),
+                }),
+            });
+            var runner = new CleanupRunner(
+                calendar, calendar, calendar, new RefusingDeleter(calendar, "s-locked"), new RecordingManifestWriter());
+
+            CleanupResult result = await PreviewAndRunAsync(runner, Period(), CleanupFilter.AllEvents);
+
+            // Один неудаляемый элемент не держит остальное: удалено соседнее событие и обрезана серия на границе.
+            Assert.True(result.FinishedWithRefusals);
+            Assert.False(result.Succeeded);
+            Assert.Null(result.Exception);
+            Assert.Equal(1, result.RefusedCount);
+            Assert.Equal(1, result.DeletedCount);
+            Assert.Equal(2, result.TrimmedCount);
+            Assert.Contains("ErrorAccessDenied", result.Message);
+            Assert.Equal(new[] { "m-bound", "s-locked" }, calendar.ItemIds().OrderBy(x => x));
+            Assert.Equal(new[] { "mb-0", "mb-3" }, calendar.OccurrenceIds("m-bound").OrderBy(x => x));
+        }
+
+        /// <summary>Порт удаления, у которого сервер отказывает по одному элементу (нет прав на него).</summary>
+        private sealed class RefusingDeleter : ITargetDeleter
+        {
+            private readonly ITargetDeleter _inner;
+            private readonly string _locked;
+
+            public RefusingDeleter(ITargetDeleter inner, string locked)
+            {
+                _inner = inner;
+                _locked = locked;
+            }
+
+            public async Task<IReadOnlyList<Core.Paging.DeleteResult>> DeleteAsync(
+                IReadOnlyList<string> itemIds, TargetDeleteMode mode, CancellationToken cancellationToken)
+            {
+                List<string> allowed = itemIds.Where(id => id != _locked).ToList();
+                IReadOnlyList<Core.Paging.DeleteResult> done = await _inner.DeleteAsync(allowed, mode, cancellationToken);
+                var results = new List<Core.Paging.DeleteResult>();
+                int next = 0;
+                foreach (string id in itemIds)
+                {
+                    results.Add(id == _locked ? Core.Paging.DeleteResult.Failed("ErrorAccessDenied") : done[next++]);
+                }
+
+                return results;
+            }
+        }
+
         /// <summary>Порт удаления, который «нажимает Остановить» во время первого пакета.</summary>
         private sealed class CancelOnFirstDelete : ITargetDeleter
         {

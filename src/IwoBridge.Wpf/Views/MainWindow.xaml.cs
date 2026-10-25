@@ -91,10 +91,18 @@ namespace IwoBridge.Wpf.Views
                 if (_dialogs.Ask("Закрыть программу?", question, "Остановить и закрыть", "Продолжить работу"))
                 {
                     _closeAfterStop = true;
-                    Task operation = copy.IsBusy ? copy.Operation : cleanup.Operation;
+
+                    // Ждать обе операции: автокопирование могло начаться, пока шла очистка, и наоборот.
+                    Task operation = Task.WhenAll(copy.Operation, cleanup.Operation);
                     copy.Stop();
                     cleanup.Stop();
                     CloseWhenStopped(operation);
+                }
+                else
+                {
+                    // Работа продолжается: прежняя просьба выйти (меню значка «Выход») снята — крестик снова прячет окно.
+                    _exitRequested = false;
+                    _silentExit = false;
                 }
 
                 return;
@@ -113,7 +121,11 @@ namespace IwoBridge.Wpf.Views
             Title = "Останавливаю…";
             IsEnabled = false;
             operation.ContinueWith(
-                _ => Dispatcher.BeginInvoke(new Action(Close)),
+                finished =>
+                {
+                    _ = finished.Exception; // ошибка уже показана на экране; наблюдается, чтобы не всплыть позже
+                    Dispatcher.BeginInvoke(new Action(Close));
+                },
                 CancellationToken.None,
                 TaskContinuationOptions.None,
                 TaskScheduler.Default);

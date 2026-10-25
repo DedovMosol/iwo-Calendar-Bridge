@@ -93,6 +93,27 @@ namespace IwoBridge.Ews.Tests
             Assert.Equal(DateTimeKind.Unspecified, start.Kind);
         }
 
+        [Theory]
+        [InlineData(5)] // источник восточнее приёмника: полночь источника — 22:00 накануне в +03:00
+        [InlineData(1)] // западнее: 02:00 того же дня
+        [InlineData(3)] // тот же пояс
+        public void AllDay_FromOtherZone_SameLocalDate(int sourceOffsetHours)
+        {
+            TimeZoneInfo zone = CalendarZones.ForOffset(TimeSpan.FromHours(3));
+            DateTime startUtc = new DateTime(2026, 5, 1, 0, 0, 0, DateTimeKind.Utc).AddHours(-sourceOffsetHours);
+            (DateTime start, DateTime end) = EwsFieldMapper.TimesForWrite(startUtc, startUtc.AddDays(2), isAllDay: true, zone);
+            Assert.Equal(new DateTime(2026, 5, 1), start);
+            Assert.Equal(new DateTime(2026, 5, 3), end);
+        }
+
+        [Fact]
+        public void AllDay_NearMaxValue_NoOverflow()
+        {
+            DateTime startUtc = DateTime.SpecifyKind(DateTime.MaxValue.Date.AddHours(-1), DateTimeKind.Utc);
+            (DateTime start, DateTime end) = EwsFieldMapper.TimesForWrite(startUtc, startUtc, isAllDay: true, CalendarZones.ForOffset(TimeSpan.Zero));
+            Assert.True(end > start);
+        }
+
         [Fact]
         public void Timed_WrittenAsExactUtc()
         {

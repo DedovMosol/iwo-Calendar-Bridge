@@ -25,9 +25,13 @@ namespace IwoBridge.Ews
         private readonly ExchangeService[] _services;
         private readonly RetryPolicy _retry;
         private readonly SemaphoreSlim _gate = new SemaphoreSlim(1, 1);
-        private int _active;
+        private readonly ActiveEndpoint _active;
 
-        public EwsChannel(IReadOnlyList<ExchangeService> services, RetryPolicy? retry)
+        /// <param name="active">
+        /// Номер рабочего адреса, общий с другим каналом того же подключения (чтение и запись): когда один канал перешёл на
+        /// резервный адрес, второй сразу идёт туда же, а не ждёт тайм-аута на недоступном основном. <c>null</c> — свой.
+        /// </param>
+        public EwsChannel(IReadOnlyList<ExchangeService> services, RetryPolicy? retry, ActiveEndpoint? active = null)
         {
             if (services is null || services.Count == 0 || services.Any(s => s is null))
             {
@@ -36,10 +40,11 @@ namespace IwoBridge.Ews
 
             _services = services.ToArray();
             _retry = retry ?? RetryPolicy.None;
+            _active = active ?? new ActiveEndpoint();
         }
 
         /// <summary>Номер адреса, через который сейчас идут запросы (0 — основной).</summary>
-        public int ActiveIndex => Volatile.Read(ref _active);
+        public int ActiveIndex => _active.Index;
 
         /// <summary>Сервис текущего адреса — для создания объектов EWS (новое событие), а не для вызовов.</summary>
         public ExchangeService Current => _services[ActiveIndex];
@@ -48,8 +53,18 @@ namespace IwoBridge.Ews
         public Task<T> RunAsync<T>(Func<ExchangeService, T> work, CancellationToken cancellationToken, bool retry = true)
         {
             return retry
-                ? _retry.ExecuteAsync(() => RunOnceAsync(work, cancellationToken), cancellationToken)
-                : RunOnceAsync(work, cancellationToken);
+                ? _retry.ExecuteAsync(() => RunOnceAsync(work, cancellationToken, idempotent: true), cancellationToken)
+                : RunOnceAsync(work, cancellationToken, idempotent: true);
+        }
+
+        /// <summary>
+        /// Неидемпотентная запись (создание события, добавление вложения): без повторов, на другой адрес — только если
+        /// запрос точно не ушёл (<see cref="EwsErrorMapper.IsNotSent"/>). После обрыва или тайм-аута ответа сервер мог
+        /// запрос выполнить, и повтор создал бы второй экземпляр.
+        /// </summary>
+        public Task<T> RunOnceNonIdempotentAsync<T>(Func<ExchangeService, T> work, CancellationToken cancellationToken)
+        {
+            return RunOnceAsync(work, cancellationToken, idempotent: false);
         }
 
         public Task RunAsync(Action<ExchangeService> work, CancellationToken cancellationToken)
@@ -67,12 +82,12 @@ namespace IwoBridge.Ews
         /// Попытка по текущему адресу; недоступен — сразу по следующему (каждый адрес не больше одного раза за попытку).
         /// Удачный адрес становится текущим. Номер адреса меняется только под семафором — гонок нет.
         /// </summary>
-        private async Task<T> RunOnceAsync<T>(Func<ExchangeService, T> work, CancellationToken cancellationToken)
+        private async Task<T> RunOnceAsync<T>(Func<ExchangeService, T> work, CancellationToken cancellationToken, bool idempotent)
         {
             await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                int index = _active;
+                int index = _active.Index % _services.Length;
                 for (int tried = 1; ; tried++)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
@@ -80,12 +95,12 @@ namespace IwoBridge.Ews
                     try
                     {
                         T result = await System.Threading.Tasks.Task.Run(() => work(service)).ConfigureAwait(false);
-                        Volatile.Write(ref _active, index);
+                        _active.Index = index;
                         return result;
                     }
                     catch (Exception ex) when (tried < _services.Length
                         && !cancellationToken.IsCancellationRequested
-                        && ErrorClassifier.IsUnreachable(EwsErrorMapper.MapException(ex)))
+                        && (idempotent ? ErrorClassifier.IsUnreachable(EwsErrorMapper.MapException(ex)) : EwsErrorMapper.IsNotSent(ex)))
                     {
                         index = (index + 1) % _services.Length;
                     }
@@ -95,6 +110,18 @@ namespace IwoBridge.Ews
             {
                 _gate.Release();
             }
+        }
+    }
+
+    /// <summary>Номер рабочего адреса подключения; запись и чтение атомарны (общий для каналов одного подключения).</summary>
+    internal sealed class ActiveEndpoint
+    {
+        private int _index;
+
+        public int Index
+        {
+            get => Volatile.Read(ref _index);
+            set => Volatile.Write(ref _index, value);
         }
     }
 }

@@ -5,6 +5,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using IwoBridge.App.Cleanup;
+using IwoBridge.App.History;
 using IwoBridge.Core.Cleanup;
 using IwoBridge.Core.Model;
 using IwoBridge.Core.Time;
@@ -54,6 +55,8 @@ namespace IwoBridge.Wpf.ViewModels
     {
         private readonly IDialogService _dialogs;
         private readonly Func<DateTime> _today;
+        private readonly Func<bool> _otherBusy;
+        private readonly IOperationLog? _log;
 
         private ITargetSession? _session;
         private CleanupStep _step = CleanupStep.Choose;
@@ -82,10 +85,14 @@ namespace IwoBridge.Wpf.ViewModels
 
         /// <param name="dialogs">Окна подтверждения и системные действия.</param>
         /// <param name="today">Текущая дата (для подсказок периода); в тестах — фиксированная.</param>
-        public CleanupViewModel(IDialogService dialogs, Func<DateTime>? today = null)
+        /// <param name="otherBusy">Идёт другая операция окна (копирование): очистка в это время не начинается — и с клавиатуры (F5).</param>
+        /// <param name="log">Журнал операций; <c>null</c> — удаление не записывается (тесты экрана).</param>
+        public CleanupViewModel(IDialogService dialogs, Func<DateTime>? today = null, Func<bool>? otherBusy = null, IOperationLog? log = null)
         {
             _dialogs = dialogs ?? throw new ArgumentNullException(nameof(dialogs));
+            _log = log;
             _today = today ?? (() => System.DateTime.Today);
+            _otherBusy = otherBusy ?? (() => false);
 
             // По умолчанию — последний месяц: самый частый случай (свежий «мусор»). Это лишь начальное значение полей:
             // без предпросмотра и подтверждения ничего не удаляется.
@@ -379,9 +386,12 @@ namespace IwoBridge.Wpf.ViewModels
             StopCommand.RaiseCanExecuteChanged();
         }
 
-        private bool CanPreview => HasSession && !IsBusy;
+        private bool CanPreview => HasSession && !IsBusy && !_otherBusy();
 
-        private bool CanDelete => HasPreview && _preview!.CanProceed && !_preview.Plan.IsEmpty && !IsBusy;
+        private bool CanDelete => HasPreview && _preview!.CanProceed && !_preview.Plan.IsEmpty && !IsBusy && !_otherBusy();
+
+        /// <summary>Другая операция окна началась или закончилась — доступность команд очистки пересчитывается.</summary>
+        internal void OtherBusyChanged() => RefreshCommands();
 
         private Task Track(Task operation)
         {
@@ -481,18 +491,26 @@ namespace IwoBridge.Wpf.ViewModels
             TargetDeleteMode mode = _hardDelete ? TargetDeleteMode.HardDelete : TargetDeleteMode.MoveToDeletedItems;
             ClearResult();
             Step = CleanupStep.Deleting;
+            DateTime started = DateTime.UtcNow;
+            string period = preview.Scope.IsWholeCalendar ? "весь календарь" : OperationHistory.Period(_periodStart, _periodEnd);
+            _log?.Info("Очистка начата: " + session.TargetLabel + " [" + period + "], " + DescribePlan(preview.Plan)
+                + (_hardDelete ? ", безвозвратно" : ", в «Удалённые»"));
+            CleanupResult? result = null;
+            bool cancelled = false;
             using (var cancellation = BeginOperation())
             {
                 try
                 {
-                    CleanupResult result = await session.Runner
+                    result = await session.Runner
                         .RunAsync(preview, mode, NewProgress(), cancellation.Token)
                         .ConfigureAwait(true);
                     ShowResult(result, mode, session);
+                    cancelled = result.Cancelled;
                 }
                 catch (OperationCanceledException)
                 {
                     ShowStoppedBeforeDeletion();
+                    cancelled = true;
                 }
 #pragma warning disable CA1031 // Ошибка до начала удаления: ничего не удалено, показываем причину.
                 catch (Exception ex)
@@ -511,6 +529,23 @@ namespace IwoBridge.Wpf.ViewModels
                     EndOperation();
                 }
             }
+
+            // Удалённые серии целиком и экземпляры серий — в одном счётчике «удалено»; список удалённого — в манифесте.
+            OperationHistory.Write(_log, () => new OperationRecord(
+                OperationKind.Cleanup,
+                started,
+                DateTime.UtcNow,
+                cancelled ? OperationOutcome.Cancelled : ResultIsSuccess ? OperationOutcome.Success : OperationOutcome.Problem,
+                null,
+                session.TargetLabel,
+                period,
+                0,
+                0,
+                (result?.DeletedCount ?? 0) + (result?.TrimmedCount ?? 0),
+                result?.RefusedCount ?? 0,
+                ResultTitle ?? string.Empty,
+                OperationHistory.Details(ResultText, Error)
+                    .Concat(result?.ManifestPath is null ? Enumerable.Empty<string>() : new[] { "Список удаляемого: " + result.ManifestPath })));
         }
 
         private bool TryBuildScope(TargetTimeZone zone, out CleanupScope? scope)
@@ -691,6 +726,15 @@ namespace IwoBridge.Wpf.ViewModels
                 ResultIsSuccess = false;
                 ResultTitle = "Удаление не выполнялось";
                 text.Append(result.Message).Append("\nНичего не удалено.");
+            }
+            else if (result.FinishedWithRefusals)
+            {
+                // Весь список пройден, сервер отказал по отдельным событиям: это не обрыв, а неполный итог.
+                ResultIsSuccess = false;
+                ResultTitle = "Готово, но не всё";
+                text.Append(char.ToUpper(done[0], RussianText.Culture)).Append(done.Substring(1));
+                text.Append('\n').Append(result.Message);
+                AppendUntouched(text, result);
             }
             else
             {

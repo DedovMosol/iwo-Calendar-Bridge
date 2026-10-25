@@ -71,11 +71,12 @@ namespace IwoBridge.Ews
 
             // Чтение — в UTC; запись событий — в поясе календаря ящика (CalendarZones). У обоих каналов те же
             // группы соединений адресов, поэтому и та же проверка сертификата.
+            var active = new ActiveEndpoint();
             var read = new EwsChannel(
-                _endpoints.Select(e => factory.Create(profile.ForEndpoint(e.Settings), credentials, e.ConnectionGroup)).ToArray(), retry);
+                _endpoints.Select(e => factory.Create(profile.ForEndpoint(e.Settings), credentials, e.ConnectionGroup)).ToArray(), retry, active);
             TimeZoneInfo calendarZone = CalendarZones.ForOffset(profile.TimeZone.Offset);
             var write = new EwsChannel(
-                _endpoints.Select(e => factory.Create(profile.ForEndpoint(e.Settings), credentials, e.ConnectionGroup, calendarZone)).ToArray(), retry);
+                _endpoints.Select(e => factory.Create(profile.ForEndpoint(e.Settings), credentials, e.ConnectionGroup, calendarZone)).ToArray(), retry, active);
 
             ReadChannel = read;
             Calendar = new EwsCalendarGateway(read, calendar);
@@ -206,7 +207,10 @@ namespace IwoBridge.Ews
             foreach (Endpoint endpoint in _endpoints)
             {
                 TlsTrustRegistry.Unregister(endpoint.ConnectionGroup);
-                ServicePointManager.FindServicePoint(endpoint.Settings.EwsUrl).CloseConnectionGroup(endpoint.ConnectionGroup);
+
+                // Точка обслуживания та же, что у запросов EWS: через системный прокси (если адрес не в исключениях) —
+                // точка прокси, иначе соединения остались бы открытыми до истечения простоя.
+                ServicePointManager.FindServicePoint(endpoint.Settings.EwsUrl, WebRequest.DefaultWebProxy).CloseConnectionGroup(endpoint.ConnectionGroup);
             }
         }
 

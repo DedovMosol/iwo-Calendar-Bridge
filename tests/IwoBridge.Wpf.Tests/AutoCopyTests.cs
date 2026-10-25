@@ -40,6 +40,46 @@ namespace IwoBridge.Wpf.Tests
         }
 
         [Fact]
+        public async Task SystemResumed_NotDueKeepsInterval_OverdueMovedToMinute_PausedStaysPaused()
+        {
+            var timer = new FakeTimer();
+            var clock = new DateTime(2026, 1, 10, 8, 0, 0);
+            var auto = new AutoCopyViewModel(
+                timer, null, () => Task.FromResult(new AutoRunOutcome("изменений нет", false)), () => { }, true, 240, () => clock);
+            await timer.FireAsync();
+            Assert.Equal(TimeSpan.FromMinutes(240), timer.Due);
+
+            clock = clock.AddMinutes(30); // проснулся через полчаса: до запуска ещё 3,5 часа
+            auto.SystemResumed();
+            Assert.Equal(TimeSpan.FromMinutes(210), timer.Due);
+
+            clock = clock.AddHours(5); // проспал срок — через минуту, когда поднимется сеть
+            auto.SystemResumed();
+            Assert.Equal(AutoCopyViewModel.FirstDelay, timer.Due);
+
+            var pausedTimer = new FakeTimer();
+            var paused = new AutoCopyViewModel(pausedTimer, null, () => Task.FromResult(new AutoRunOutcome("неверный пароль", true, needsAttention: true)), () => { }, true, 5);
+            await pausedTimer.FireAsync();
+            TimeSpan? before = pausedTimer.Due;
+            paused.SystemResumed();
+            Assert.True(paused.IsPaused);
+            Assert.Equal(before, pausedTimer.Due);
+        }
+
+        [Fact]
+        public async Task RunNow_Skipped_PersonToldWhen()
+        {
+            var timer = new FakeTimer();
+            var auto = new AutoCopyViewModel(timer, null, () => Task.FromResult(new AutoRunOutcome("занято", false, skipped: true)), () => { }, true, 60);
+            string? told = null;
+            auto.Postponed += (_, message) => told = message;
+
+            await auto.RunNowCommand.ExecuteAsync();
+
+            Assert.Contains("через минуту", told);
+        }
+
+        [Fact]
         public async Task Skipped_RetriedInMinute()
         {
             var timer = new FakeTimer();

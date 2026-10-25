@@ -30,7 +30,8 @@ namespace IwoBridge.Outlook
     ///  - olRecursDaily (0) с маской дней — это «каждый будний день»: Outlook хранит его как ежедневное с маской,
     ///    переносится еженедельным по этим дням;
     ///  - olRecursWeekly (1), olRecursMonthly (2), olRecursMonthNth (3), olRecursYearly (5), olRecursYearNth (6);
-    ///  - у годовых Outlook отдаёт интервал в месяцах (12) — годовое правило всегда «каждый год»;
+    ///  - у годовых Outlook отдаёт интервал в месяцах (12 — каждый год); «раз в N лет» переносится месячным правилом
+    ///    с интервалом 12·N;
     ///  - окончание: NoEndDate — бессрочно, иначе по дате окончания (Outlook заполняет и дату, и число повторений;
     ///    дата однозначна).
     /// </summary>
@@ -66,8 +67,14 @@ namespace IwoBridge.Outlook
                     return new RecurrenceRule(RecurrencePattern.MonthlyAbsolute, interval, start, end, dayOfMonth: p.DayOfMonth);
                 case MonthNth:
                     return new RecurrenceRule(RecurrencePattern.MonthlyRelative, interval, start, end, days: days, week: (WeekOfMonth)p.Instance);
+                // «Раз в N лет» (N > 1; Outlook 2010+ отдаёт интервал в месяцах, 24 — раз в два года) у годового правила EWS
+                // не выражается — это то же месячное правило с интервалом 12·N от месяца начала серии.
+                case Yearly when interval > 12:
+                    return new RecurrenceRule(RecurrencePattern.MonthlyAbsolute, interval, start, end, dayOfMonth: p.DayOfMonth);
                 case Yearly:
                     return new RecurrenceRule(RecurrencePattern.YearlyAbsolute, 1, start, end, dayOfMonth: p.DayOfMonth, month: p.MonthOfYear);
+                case YearNth when interval > 12:
+                    return new RecurrenceRule(RecurrencePattern.MonthlyRelative, interval, start, end, days: days, week: (WeekOfMonth)p.Instance);
                 case YearNth:
                     return new RecurrenceRule(RecurrencePattern.YearlyRelative, 1, start, end, days: days, month: p.MonthOfYear, week: (WeekOfMonth)p.Instance);
                 default:

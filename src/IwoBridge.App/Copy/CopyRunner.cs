@@ -92,10 +92,18 @@ namespace IwoBridge.App.Copy
         public Exception Exception { get; }
     }
 
-    /// <summary>Итог копирования: сколько создано, перезаписано, удалено; сбои по отдельным событиям.</summary>
+    /// <summary>Итог копирования: сколько создано, перезаписано, удалено; сбои по отдельным событиям; замечания к записанному.</summary>
     public sealed class CopyResult
     {
-        internal CopyResult(int created, int updated, int deleted, IReadOnlyList<CopyFailure> failures, bool cancelled, string? refusedReason, Exception? fatal)
+        internal CopyResult(
+            int created,
+            int updated,
+            int deleted,
+            IReadOnlyList<CopyFailure> failures,
+            bool cancelled,
+            string? refusedReason,
+            Exception? fatal,
+            IReadOnlyList<string>? remarks = null)
         {
             Created = created;
             Updated = updated;
@@ -104,7 +112,14 @@ namespace IwoBridge.App.Copy
             Cancelled = cancelled;
             RefusedReason = refusedReason;
             Fatal = fatal;
+            Remarks = remarks ?? Array.Empty<string>();
         }
+
+        /// <summary>
+        /// Что в записанных копиях перенести нельзя: ««Тема»: изменение повторения от … не перенесено…». Копии записаны и
+        /// считаются актуальными, следующий запуск их не трогает — замечание показывается один раз.
+        /// </summary>
+        public IReadOnlyList<string> Remarks { get; }
 
         public int Created { get; }
 
@@ -147,17 +162,27 @@ namespace IwoBridge.App.Copy
         private readonly ISourceCalendar _source;
         private readonly ICopyTarget _target;
         private readonly Func<Exception, bool> _isFatal;
-
+        private readonly Func<Exception, bool> _stopsAtOnce;
         private readonly PrivateEvents _privateEvents;
 
-        /// <param name="isFatal">Ошибка, после которой продолжать нельзя (по умолчанию — никакая).</param>
+        /// <param name="isFatal">Ошибка всего подключения, после которой продолжать нельзя (по умолчанию — никакая).</param>
         /// <param name="privateEvents">Что делать с личными событиями источника (<see cref="CopyRules"/>).</param>
-        public CopyRunner(ISourceCalendar source, ICopyTarget target, Func<Exception, bool>? isFatal = null, PrivateEvents privateEvents = PrivateEvents.HideDetails)
+        /// <param name="stopsAtOnce">
+        /// Из ошибок <paramref name="isFatal"/> — те, что останавливают сразу (вход, права, сертификат: их нужно
+        /// исправлять человеку). Остальные (связь) останавливают со второго события подряд. По умолчанию — все сразу.
+        /// </param>
+        public CopyRunner(
+            ISourceCalendar source,
+            ICopyTarget target,
+            Func<Exception, bool>? isFatal = null,
+            PrivateEvents privateEvents = PrivateEvents.HideDetails,
+            Func<Exception, bool>? stopsAtOnce = null)
         {
             _privateEvents = privateEvents;
             _source = source ?? throw new ArgumentNullException(nameof(source));
             _target = target ?? throw new ArgumentNullException(nameof(target));
             _isFatal = isFatal ?? (_ => false);
+            _stopsAtOnce = stopsAtOnce ?? (_ => true);
         }
 
         public string SourceLabel => _source.Label;
@@ -253,12 +278,14 @@ namespace IwoBridge.App.Copy
             SyncAction[] actions = preview.Plan.Actions.Where(chosen.Contains).ToArray();
             int created = 0, updated = 0, deleted = 0;
             var failures = new List<CopyFailure>();
+            var remarks = new List<string>();
+            bool connectionSuspect = false;
 
             for (int i = 0; i < actions.Length; i++)
             {
                 if (cancellationToken.IsCancellationRequested)
                 {
-                    return new CopyResult(created, updated, deleted, failures, true, null, null);
+                    return new CopyResult(created, updated, deleted, failures, true, null, null, remarks);
                 }
 
                 progress?.Report(new CopyProgress(CopyStage.Writing, i, actions.Length));
@@ -270,17 +297,20 @@ namespace IwoBridge.App.Copy
                     switch (action.Kind)
                     {
                         case SyncActionKind.Create:
-                            await CreateAsync(preview, action).ConfigureAwait(false);
+                            Remark(preview, action, remarks, await CreateAsync(preview, action).ConfigureAwait(false));
                             created++;
                             break;
                         case SyncActionKind.Update:
-                            await UpdateAsync(preview, action).ConfigureAwait(false);
+                            Remark(preview, action, remarks, await UpdateAsync(preview, action).ConfigureAwait(false));
                             updated++;
                             break;
                         case SyncActionKind.Recreate:
-                            await _target.DeleteAsync(action.Copy!.ItemId, CancellationToken.None).ConfigureAwait(false);
-                            await CreateAsync(preview, action).ConfigureAwait(false);
+                            // Сначала новая копия, потом удаление прежней: сбой создания (вложения не прочитались, сервер
+                            // отказал) оставляет прежнюю копию, а не теряет событие. Сбой удаления оставляет две копии —
+                            // лишнюю следующий запуск уберёт как дубль; новая копия уже записана и считается перезаписью.
+                            Remark(preview, action, remarks, await CreateAsync(preview, action).ConfigureAwait(false));
                             updated++;
+                            await _target.DeleteAsync(action.Copy!.ItemId, CancellationToken.None).ConfigureAwait(false);
                             break;
                         case SyncActionKind.Delete:
                             await _target.DeleteAsync(action.Copy!.ItemId, CancellationToken.None).ConfigureAwait(false);
@@ -294,31 +324,53 @@ namespace IwoBridge.App.Copy
                 catch (Exception ex)
 #pragma warning restore CA1031
                 {
-                    if (_isFatal(ex))
+                    // Ошибка входа, прав, сертификата — останавливает сразу: повторы приблизили бы блокировку учётной
+                    // записи. Сбой связи (тайм-аут, обрыв, сервер занят) мог быть вызван самим событием — например,
+                    // крупным вложением; он останавливает работу, только если следующее событие тоже не прошло.
+                    // Иначе одно такое событие, стоящее первым, навсегда остановило бы автокопирование всех остальных.
+                    if (_isFatal(ex) && (_stopsAtOnce(ex) || connectionSuspect))
                     {
-                        return new CopyResult(created, updated, deleted, failures, false, null, ex);
+                        return new CopyResult(created, updated, deleted, failures, false, null, ex, remarks);
                     }
 
+                    connectionSuspect = _isFatal(ex);
                     failures.Add(new CopyFailure(action, ex));
+                    continue;
                 }
+
+                connectionSuspect = false;
             }
 
             progress?.Report(new CopyProgress(CopyStage.Writing, actions.Length, actions.Length));
-            return new CopyResult(created, updated, deleted, failures, false, null, null);
+            return new CopyResult(created, updated, deleted, failures, false, null, null, remarks);
         }
 
-        private async Task CreateAsync(CopyPreview preview, SyncAction action)
+        /// <summary>Замечания приёмника к записанной копии — с темой события, чтобы было видно, о чём речь.</summary>
+        private static void Remark(CopyPreview preview, SyncAction action, List<string> remarks, IReadOnlyList<string>? notes)
+        {
+            if (notes is null || notes.Count == 0)
+            {
+                return;
+            }
+
+            string subject = preview.SourceItems.TryGetValue(action.SourceId, out SourceItem? item) && !string.IsNullOrWhiteSpace(item.Subject)
+                ? item.Subject
+                : "(без темы)";
+            remarks.AddRange(notes.Where(n => !string.IsNullOrWhiteSpace(n)).Select(n => "«" + subject + "»: " + n));
+        }
+
+        private async Task<IReadOnlyList<string>> CreateAsync(CopyPreview preview, SyncAction action)
         {
             SourceItem item = preview.SourceItems[action.SourceId];
             IReadOnlyList<AttachmentContent> attachments = await LoadAttachmentsAsync(item).ConfigureAwait(false);
-            await _target.CreateAsync(item, attachments, CancellationToken.None).ConfigureAwait(false);
+            return await _target.CreateAsync(item, attachments, CancellationToken.None).ConfigureAwait(false);
         }
 
-        private async Task UpdateAsync(CopyPreview preview, SyncAction action)
+        private async Task<IReadOnlyList<string>> UpdateAsync(CopyPreview preview, SyncAction action)
         {
             SourceItem item = preview.SourceItems[action.SourceId];
             IReadOnlyList<AttachmentContent> attachments = await LoadAttachmentsAsync(item).ConfigureAwait(false);
-            await _target.UpdateAsync(action.Copy!.ItemId, item, attachments, CancellationToken.None).ConfigureAwait(false);
+            return await _target.UpdateAsync(action.Copy!.ItemId, item, attachments, CancellationToken.None).ConfigureAwait(false);
         }
 
         private Task<IReadOnlyList<AttachmentContent>> LoadAttachmentsAsync(SourceItem item)

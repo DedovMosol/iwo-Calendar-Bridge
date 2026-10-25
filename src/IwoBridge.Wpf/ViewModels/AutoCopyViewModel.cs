@@ -101,7 +101,7 @@ namespace IwoBridge.Wpf.ViewModels
             Intervals = CopySettings.Intervals.Select(m => new IntervalOption(m)).ToArray();
             _interval = Intervals.FirstOrDefault(i => i.Minutes == intervalMinutes) ?? Intervals.First(i => i.Minutes == 30);
             _timer.Elapsed += OnElapsed;
-            RunNowCommand = new AsyncCommand(RunAsync, () => _isEnabled && !_isRunning && _pausedReason is null);
+            RunNowCommand = new AsyncCommand(() => RunAsync(manual: true), () => _isEnabled && !_isRunning && _pausedReason is null);
             if (enabled)
             {
                 _isEnabled = true;
@@ -111,6 +111,9 @@ namespace IwoBridge.Wpf.ViewModels
 
         /// <summary>Что-то пошло не так при автоматическом запуске — окно показывает уведомление.</summary>
         public event EventHandler<AutoRunOutcome>? Problem;
+
+        /// <summary>«Скопировать сейчас» не выполнено сразу (идёт другая операция) — человеку сообщается, когда будет.</summary>
+        public event EventHandler<string>? Postponed;
 
         public IReadOnlyList<IntervalOption> Intervals { get; }
 
@@ -157,10 +160,7 @@ namespace IwoBridge.Wpf.ViewModels
 
                 if (_isEnabled && !_isRunning && _pausedReason is null)
                 {
-                    // Новый интервал считается от последнего запуска (или от сейчас, если запусков не было).
-                    DateTime from = _lastRun ?? _now();
-                    TimeSpan due = from + TimeSpan.FromMinutes(value.Minutes) - _now();
-                    Arm(due < FirstDelay ? FirstDelay : due);
+                    Arm(DueByInterval());
                 }
 
                 RaiseStatus();
@@ -279,13 +279,43 @@ namespace IwoBridge.Wpf.ViewModels
             _timer.Dispose();
         }
 
+        /// <summary>
+        /// Компьютер проснулся или сменилось время: срок пересчитывается по интервалу от последнего запуска. Просроченный
+        /// за сон запуск не выполняется сразу (сеть и VPN ещё не поднялись — было бы «нет связи»), а назначается через
+        /// минуту. Не просроченный остаётся по расписанию: «раз в сутки» на ноутбуке, который просыпается пять раз за
+        /// день, — по-прежнему раз в сутки.
+        /// </summary>
+        public void SystemResumed()
+        {
+            if (_isEnabled && !_isRunning && _pausedReason is null)
+            {
+                Arm(DueByInterval());
+                RaiseStatus();
+            }
+        }
+
+        /// <summary>
+        /// Через сколько следующий запуск: интервал от последнего запуска, но не раньше чем через минуту. Запусков ещё не
+        /// было — через минуту, как после включения.
+        /// </summary>
+        private TimeSpan DueByInterval()
+        {
+            if (_lastRun is null)
+            {
+                return FirstDelay;
+            }
+
+            TimeSpan due = _lastRun.Value + TimeSpan.FromMinutes(_interval.Minutes) - _now();
+            return due < FirstDelay ? FirstDelay : due;
+        }
+
         private async void OnElapsed(object? sender, EventArgs e)
         {
             // async void — только здесь, на границе с таймером; исключения run обрабатывает сам и возвращает итогом.
-            await RunAsync().ConfigureAwait(true);
+            await RunAsync(manual: false).ConfigureAwait(true);
         }
 
-        private async Task RunAsync()
+        private async Task RunAsync(bool manual)
         {
             if (!_isEnabled || _isRunning || _pausedReason != null)
             {
@@ -315,6 +345,10 @@ namespace IwoBridge.Wpf.ViewModels
             if (outcome.Skipped)
             {
                 Arm(BusyRetry);
+                if (manual)
+                {
+                    Postponed?.Invoke(this, "Сейчас идёт другая операция или открыт вопрос — скопирую через минуту.");
+                }
             }
             else
             {

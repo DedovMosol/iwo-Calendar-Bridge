@@ -185,6 +185,21 @@
                 списком), нажмите «Показать, что будет удалено», проверьте два списка —
                 «Будет удалено» и «Останется», затем «Удалить…» и введите адрес ящика для подтверждения. По умолчанию
                 удалённое попадает в папку «Удалённые» и его можно вернуть. Список удалённого сохраняется в файл.
+                Пароль или адрес добавленного ящика меняет кнопка «Изменить…», «Убрать из списка» убирает ящик из
+                программы (его календарь не меняется).
+            </Paragraph>
+
+            <Paragraph Style="{StaticResource H2}">История — что и когда сделано</Paragraph>
+            <Paragraph>
+                Кнопка <Bold>«История»</Bold> вверху окна (или Ctrl+H) открывает журнал: каждое копирование, вручную и по
+                расписанию, и каждая очистка. Видно, когда, откуда и куда, за какой период, сколько событий создано,
+                перезаписано и удалено, сколько не удалось, чем закончилось и сколько длилось. Строка с проблемой
+                выделена цветом. Подробности выбранной строки показаны внизу окна, их можно выделить и скопировать.
+                Журнал хранится в файле <Run FontFamily="Consolas">logs\history.jsonl</Run> в папке программы.
+            </Paragraph>
+            <Paragraph>
+                Если запустить программу из командной строки (cmd или PowerShell), начало и итог каждой операции появятся
+                и там. Сохранить их в файл: <Run FontFamily="Consolas">IwoCalendarBridge.exe &gt; run.log</Run>.
             </Paragraph>
 
             <Paragraph Style="{StaticResource H2}">Если что-то не получилось</Paragraph>
@@ -219,6 +234,10 @@
                         <TableCell Padding="8,6"><Paragraph Margin="0">Проверьте, что выбран тот календарь. Если удалить и правда нужно, поставьте галочку «Это ожидаемо» и снова нажмите «Показать».</Paragraph></TableCell>
                     </TableRow>
                     <TableRow>
+                        <TableCell Padding="8,6"><Paragraph Margin="0">Outlook спрашивает: «Программа пытается получить доступ…»</Paragraph></TableCell>
+                        <TableCell Padding="8,6"><Paragraph Margin="0">Так Outlook защищает описания событий, когда антивирус выключен или устарел. Пока вопрос открыт, чтение ждёт. Разрешите доступ на 10 минут. Для автокопирования попросите администратора проверить антивирус, иначе Outlook будет спрашивать при каждом запуске.</Paragraph></TableCell>
+                    </TableRow>
+                    <TableRow>
                         <TableCell Padding="8,6"><Paragraph Margin="0">«Замечания к источнику»</Paragraph></TableCell>
                         <TableCell Padding="8,6"><Paragraph Margin="0">Отдельные повторения серии повреждены в самом Outlook (он их тоже не открывает). Остальное копируется как обычно.</Paragraph></TableCell>
                     </TableRow>
@@ -231,7 +250,8 @@
 
             <Paragraph Style="{StaticResource H2}">Клавиши</Paragraph>
             <List MarkerStyle="Disc">
-                <ListItem><Paragraph><Bold>F1</Bold> — эта справка, <Bold>F5</Bold> — показать, что будет сделано, <Bold>Esc</Bold> — остановить.</Paragraph></ListItem>
+                <ListItem><Paragraph><Bold>F1</Bold> — эта справка, <Bold>Ctrl+H</Bold> — история, <Bold>F5</Bold> — показать, что будет сделано, <Bold>Esc</Bold> — остановить.</Paragraph></ListItem>
+                <ListItem><Paragraph>В истории: <Bold>F5</Bold> — перечитать журнал, <Bold>Esc</Bold> — закрыть окно.</Paragraph></ListItem>
                 <ListItem><Paragraph><Bold>Alt</Bold> + подчёркнутая буква — нажать кнопку или перейти к полю.</Paragraph></ListItem>
                 <ListItem><Paragraph>В справке: <Bold>Ctrl+F</Bold> — поиск по тексту, <Bold>Ctrl + колесо мыши</Bold> — крупнее или мельче.</Paragraph></ListItem>
             </List>

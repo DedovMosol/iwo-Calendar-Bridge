@@ -60,6 +60,8 @@ namespace IwoBridge.Ews.Mapping
             {
                 case ServiceResponseException sre:
                     return Map(sre.ErrorCode);
+                case EwsItemErrorException item:
+                    return Map(item.ErrorCode);
                 case ServiceRequestException _ when exception.InnerException != null:
                     return MapException(exception.InnerException);
                 case WebException web:
@@ -72,6 +74,36 @@ namespace IwoBridge.Ews.Mapping
                 default:
                     return OperationErrorKind.Unknown;
             }
+        }
+
+        /// <summary>
+        /// Запрос точно не дошёл до сервера: соединение не установлено или имя не разрешилось. Только такой сбой можно
+        /// безопасно повторить для неидемпотентной записи (создание): при обрыве или тайм-ауте ответа сервер мог уже
+        /// выполнить запрос.
+        /// </summary>
+        public static bool IsNotSent(Exception exception)
+        {
+            for (Exception? current = exception; current != null; current = current.InnerException)
+            {
+                if (current is WebException web
+                    && (web.Status == WebExceptionStatus.ConnectFailure
+                        || web.Status == WebExceptionStatus.NameResolutionFailure
+                        || web.Status == WebExceptionStatus.ProxyNameResolutionFailure))
+                {
+                    return true;
+                }
+
+                if (current is SocketException socket
+                    && (socket.SocketErrorCode == SocketError.ConnectionRefused
+                        || socket.SocketErrorCode == SocketError.HostUnreachable
+                        || socket.SocketErrorCode == SocketError.NetworkUnreachable
+                        || socket.SocketErrorCode == SocketError.HostNotFound))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         /// <summary>

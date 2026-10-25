@@ -38,7 +38,8 @@ namespace IwoBridge.Core.Sync
             DateTime? endUtc = null,
             string? subject = null,
             string? location = null,
-            string? body = null)
+            string? body = null,
+            bool isPrivate = false)
         {
             OriginalStartUtc = TimeMapper.ToUtc(originalStartUtc);
             IsDeleted = isDeleted;
@@ -54,6 +55,7 @@ namespace IwoBridge.Core.Sync
                 Subject = subject;
                 Location = location;
                 Body = body;
+                IsPrivate = isPrivate;
             }
         }
 
@@ -71,7 +73,16 @@ namespace IwoBridge.Core.Sync
 
         public string? Body { get; }
 
-        /// <summary>Каноническая запись для отпечатка.</summary>
+        /// <summary>
+        /// Изменённое повторение помечено «Частное» или «Конфиденциальное», хотя серия обычная: правило для личного
+        /// применяется к нему отдельно (<see cref="CopyRules"/>).
+        /// </summary>
+        public bool IsPrivate { get; }
+
+        /// <summary>
+        /// Каноническая запись для отпечатка. Текстовые поля — с длиной впереди, отсутствие — отдельной меткой: иначе
+        /// «a|b» + «c» и «a» + «b|c» давали бы одну запись, а очищенная тема не отличалась бы от отсутствующей.
+        /// </summary>
         public string Canonical => IsDeleted
             ? OriginalStartUtc.Ticks.ToString(CultureInfo.InvariantCulture) + "|deleted"
             : string.Join(
@@ -79,9 +90,13 @@ namespace IwoBridge.Core.Sync
                 OriginalStartUtc.Ticks.ToString(CultureInfo.InvariantCulture),
                 StartUtc!.Value.Ticks.ToString(CultureInfo.InvariantCulture),
                 EndUtc!.Value.Ticks.ToString(CultureInfo.InvariantCulture),
-                Subject ?? string.Empty,
-                Location ?? string.Empty,
-                Body ?? string.Empty);
+                Field(Subject),
+                Field(Location),
+                Field(Body),
+                IsPrivate ? "private" : "normal");
+
+        private static string Field(string? value) =>
+            value is null ? "-" : value.Length.ToString(CultureInfo.InvariantCulture) + ":" + value;
     }
 
     /// <summary>
@@ -200,6 +215,14 @@ namespace IwoBridge.Core.Sync
         /// <summary>Описание для планировщика синхронизации.</summary>
         public SourceEvent ToEvent() => new SourceEvent(SourceId, Kind, StartUtc, SpanEndUtc, ContentHash, Subject);
 
+        /// <summary>То же событие с другими исключениями серии (правило для личных повторений).</summary>
+        internal SourceItem WithExceptions(IEnumerable<SourceException> exceptions)
+        {
+            return new SourceItem(
+                SourceId, Subject, Location, Body, StartUtc, EndUtc, IsAllDay, Busy, Sensitivity, Recurrence, SeriesEndUtc, exceptions,
+                Attachments, RtfCompressed);
+        }
+
         /// <summary>Копия события с другим содержимым (для правил переноса, например скрытия личного).</summary>
         internal SourceItem WithoutDetails(string subject, IEnumerable<SourceException> exceptions)
         {
@@ -233,24 +256,36 @@ namespace IwoBridge.Core.Sync
                 throw new ArgumentNullException(nameof(item));
             }
 
-            // «Конфиденциальное» — строже «личного»: правило то же (содержимое не уходит в чужой домен без решения человека).
-            if (item.Sensitivity != ItemSensitivity.Private && item.Sensitivity != ItemSensitivity.Confidential)
+            if (privateEvents == PrivateEvents.CopyAll)
             {
                 return item;
             }
 
-            switch (privateEvents)
+            // «Конфиденциальное» — строже «личного»: правило то же (содержимое не уходит в чужой домен без решения человека).
+            if (item.Sensitivity != ItemSensitivity.Private && item.Sensitivity != ItemSensitivity.Confidential)
             {
-                case PrivateEvents.CopyAll:
-                    return item;
-                case PrivateEvents.Skip:
-                    return null;
-                default:
-                    IEnumerable<SourceException> exceptions = item.Exceptions.Select(e => e.IsDeleted
-                        ? e
-                        : new SourceException(e.OriginalStartUtc, false, e.StartUtc, e.EndUtc));
-                    return item.WithoutDetails(PrivateSubject, exceptions);
+                // Обычная серия, но отдельное повторение помечено личным: правило — к этому повторению.
+                return item.Exceptions.Any(e => e.IsPrivate)
+                    ? item.WithExceptions(item.Exceptions.Select(e => !e.IsPrivate ? e : PrepareException(e, privateEvents)))
+                    : item;
             }
+
+            return privateEvents == PrivateEvents.Skip
+                ? null
+                : item.WithoutDetails(PrivateSubject, item.Exceptions.Select(e => PrepareException(e, PrivateEvents.HideDetails)));
+        }
+
+        /// <summary>Повторение по правилу для личного: «Скрыть» — только время, «Не копировать» — как удалённое.</summary>
+        private static SourceException PrepareException(SourceException exception, PrivateEvents privateEvents)
+        {
+            if (exception.IsDeleted)
+            {
+                return exception;
+            }
+
+            return privateEvents == PrivateEvents.Skip
+                ? new SourceException(exception.OriginalStartUtc, true)
+                : new SourceException(exception.OriginalStartUtc, false, exception.StartUtc, exception.EndUtc, PrivateSubject, string.Empty, string.Empty, exception.IsPrivate);
         }
     }
 

@@ -17,8 +17,10 @@ namespace IwoBridge.Core.Model
             DateTime startUtc,
             DateTime endUtc,
             bool isSeriesInstance,
-            string? subject = null)
+            string? subject = null,
+            bool isAllDay = false)
         {
+            IsAllDay = isAllDay;
             if (string.IsNullOrEmpty(occurrenceItemId))
             {
                 throw new ArgumentException("ItemId экземпляра обязателен.", nameof(occurrenceItemId));
@@ -47,5 +49,8 @@ namespace IwoBridge.Core.Model
         /// Тема экземпляра (у исключения может отличаться от темы серии) — только для показа человеку.
         /// </summary>
         public string? Subject { get; }
+
+        /// <summary>Повторение «на весь день»: в период попадает по своим суткам (<see cref="Time.TimeWindow"/>).</summary>
+        public bool IsAllDay { get; }
     }
 }

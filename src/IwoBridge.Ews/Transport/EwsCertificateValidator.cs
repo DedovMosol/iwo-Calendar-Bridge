@@ -91,8 +91,11 @@ namespace IwoBridge.Ews.Transport
             {
                 PresentedCertificate presented = Describe(certificate);
                 Volatile.Write(ref _lastPresented, presented);
-                bool chainTrusted =
-                    (sslPolicyErrors & (SslPolicyErrors.RemoteCertificateChainErrors | SslPolicyErrors.RemoteCertificateNotAvailable)) == 0;
+                // Без закреплённого отпечатка сертификат принимается молча, только если Windows доверяет ему именно для этого
+                // адреса: и цепочка, и имя. Сертификат с чужим именем (подключение по IP, перехват с публичным
+                // сертификатом другого сайта) показывается человеку — доверять ли, решает он. С закреплённым отпечатком
+                // имя не важно: доверие дал человек.
+                bool chainTrusted = sslPolicyErrors == SslPolicyErrors.None;
 
                 CertificateDecision decision = CertificatePinningPolicy.Evaluate(
                     presented.Fingerprint, Volatile.Read(ref _pinned), presented.Issuer, chainTrusted);

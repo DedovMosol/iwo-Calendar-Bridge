@@ -127,6 +127,7 @@ namespace IwoBridge.Ews
                     AppointmentSchema.Start,
                     AppointmentSchema.End,
                     AppointmentSchema.AppointmentType,
+                    AppointmentSchema.IsAllDayEvent,
                     BridgeExtendedProperties.SourceId),
             };
 
@@ -270,6 +271,7 @@ namespace IwoBridge.Ews
                     AppointmentSchema.Start,
                     AppointmentSchema.End,
                     AppointmentSchema.AppointmentType,
+                    AppointmentSchema.IsAllDayEvent,
                     AppointmentSchema.ICalUid),
             };
 
@@ -298,8 +300,9 @@ namespace IwoBridge.Ews
                     {
                         appointment.TryGetProperty(AppointmentSchema.ICalUid, out string uid);
                         appointment.TryGetProperty(ItemSchema.Subject, out string subject);
+                        appointment.TryGetProperty(AppointmentSchema.IsAllDayEvent, out bool allDay);
                         accumulator.Add(EwsItemMapper.ToOccurrence(
-                            appointment.Id.UniqueId, uid, TimeMapper.ToUtc(start), TimeMapper.ToUtc(end), type, subject));
+                            appointment.Id.UniqueId, uid, TimeMapper.ToUtc(start), TimeMapper.ToUtc(end), type, subject, allDay));
                     }
                 }
 
@@ -368,6 +371,7 @@ namespace IwoBridge.Ews
                 && appointment.TryGetProperty(AppointmentSchema.AppointmentType, out AppointmentType type))
             {
                 bool isMaster = type == AppointmentType.RecurringMaster;
+                appointment.TryGetProperty(AppointmentSchema.IsAllDayEvent, out bool allDay);
                 string appointmentClass = string.IsNullOrEmpty(itemClass) ? "IPM.Appointment" : itemClass;
                 return EwsItemMapper.ToTargetItem(
                     id,
@@ -379,7 +383,8 @@ namespace IwoBridge.Ews
                     null,
                     null,
                     bridgeSourceId,
-                    subject);
+                    subject,
+                    allDay);
             }
 
             // Не событие (или битое событие без начала, конца, вида): в снимке остаётся, чтобы полнота сходилась с числом

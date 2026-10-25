@@ -25,12 +25,15 @@ namespace IwoBridge.Core.Model
             string? bridgeSourceId,
             string? uid = null,
             IReadOnlyList<OccurrenceSpan>? modifiedOccurrences = null,
-            string? subject = null)
+            string? subject = null,
+            bool isAllDay = false)
         {
             if (string.IsNullOrEmpty(itemId))
             {
                 throw new ArgumentException("ItemId обязателен.", nameof(itemId));
             }
+
+            IsAllDay = isAllDay;
 
             ItemId = itemId;
             ChangeKey = changeKey;
@@ -91,6 +94,9 @@ namespace IwoBridge.Core.Model
         /// <summary>Создан ли элемент мостом (несёт метку источника).</summary>
         public bool IsBridgeCopy => BridgeSourceId != null;
 
+        /// <summary>Событие «на весь день» (у серии — её повторения): в период попадает по своим суткам (<see cref="TimeWindow"/>).</summary>
+        public bool IsAllDay { get; }
+
         /// <summary>
         /// Копия с дочитанными данными серии; остальные поля переносятся как есть. Копирование живёт рядом с
         /// полями, чтобы новое поле нельзя было потерять при обогащении снимка.
@@ -113,7 +119,8 @@ namespace IwoBridge.Core.Model
                 BridgeSourceId,
                 uid,
                 modifiedOccurrences,
-                Subject);
+                Subject,
+                IsAllDay);
         }
     }
 }

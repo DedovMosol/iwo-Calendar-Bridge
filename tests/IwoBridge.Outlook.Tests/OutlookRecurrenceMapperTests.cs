@@ -76,6 +76,37 @@ namespace IwoBridge.Outlook.Tests
         }
 
         [Fact]
+        public void Yearly_EveryTwoYears_BecomesMonthlyEvery24()
+        {
+            // «Раз в два года, 9 мая» и «раз в три года, в последнее воскресенье марта»: интервал не теряется.
+            RecurrenceRule absolute = OutlookRecurrenceMapper.ToRule(Pattern(5, interval: 24, dayOfMonth: 9, month: 5));
+            RecurrenceRule relative = OutlookRecurrenceMapper.ToRule(Pattern(6, interval: 36, mask: 1, instance: 5, month: 3));
+            Assert.Equal(RecurrencePattern.MonthlyAbsolute, absolute.Pattern);
+            Assert.Equal(24, absolute.Interval);
+            Assert.Equal(9, absolute.DayOfMonth);
+            Assert.Equal(RecurrencePattern.MonthlyRelative, relative.Pattern);
+            Assert.Equal(36, relative.Interval);
+            Assert.Equal(WeekOfMonth.Last, relative.Week);
+            Assert.NotEqual(OutlookRecurrenceMapper.ToRule(Pattern(5, interval: 12, dayOfMonth: 9, month: 5)).Canonical, absolute.Canonical);
+        }
+
+        [Fact]
+        public void LocalToUtc_TimeInSpringForwardGap_ShiftedNotThrown()
+        {
+            // Пояс с переходом: 28.03.2010 02:00 → 03:00 (так жила Европа и Россия до 2011 года).
+            var rule = TimeZoneInfo.AdjustmentRule.CreateAdjustmentRule(
+                new DateTime(2000, 1, 1), new DateTime(2010, 12, 31), TimeSpan.FromHours(1),
+                TimeZoneInfo.TransitionTime.CreateFloatingDateRule(new DateTime(1, 1, 1, 2, 0, 0), 3, 5, DayOfWeek.Sunday),
+                TimeZoneInfo.TransitionTime.CreateFloatingDateRule(new DateTime(1, 1, 1, 3, 0, 0), 10, 5, DayOfWeek.Sunday));
+            TimeZoneInfo zone = TimeZoneInfo.CreateCustomTimeZone("test-dst", TimeSpan.FromHours(3), "test", "test", "test-dst", new[] { rule });
+
+            DateTime utc = OutlookSource.LocalToUtc(new DateTime(2010, 3, 28, 2, 30, 0), zone);
+
+            Assert.Equal(new DateTime(2010, 3, 27, 23, 30, 0, DateTimeKind.Utc), utc);
+            Assert.Equal(new DateTime(2010, 6, 1, 6, 0, 0, DateTimeKind.Utc), OutlookSource.LocalToUtc(new DateTime(2010, 6, 1, 10, 0, 0), zone));
+        }
+
+        [Fact]
         public void UnknownType_Rejected()
         {
             Assert.Throws<NotSupportedException>(() => OutlookRecurrenceMapper.ToRule(Pattern(4)));

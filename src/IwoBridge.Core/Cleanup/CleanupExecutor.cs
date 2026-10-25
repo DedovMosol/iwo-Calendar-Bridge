@@ -11,8 +11,9 @@ namespace IwoBridge.Core.Cleanup
 {
     /// <summary>
     /// Оркестратор удаления: режет список на пакеты и применяет строгую оценку каждого пакета
-    /// (<see cref="CompletenessGuard.EvaluateBatchDelete"/>). При первом же неполном пакете
-    /// останавливается и не маскирует частичный результат. Сетевые вызовы — за
+    /// (<see cref="CompletenessGuard.EvaluateBatchDelete"/>). Пакет оборвался или исходы не сопоставить с
+    /// элементами — остановка: что удалено, неизвестно. Сервер отказал по отдельным элементам — остальные пакеты
+    /// удаляются, отказы видны в итоге (частичный результат не маскируется). Сетевые вызовы — за
     /// портом <see cref="ITargetDeleter"/>, поэтому класс тестируется без сервера.
     ///
     /// Разрушительная операция допустима только по авторитетному снимку: вызывающий код передаёт вердикт снимка,
@@ -90,6 +91,8 @@ namespace IwoBridge.Core.Cleanup
             }
 
             int removed = 0;
+            int notRemoved = 0;
+            string? firstItemError = null;
             foreach (IReadOnlyList<string> batch in Batching.Chunk(itemIds, _batchSize))
             {
                 if (cancellationToken.IsCancellationRequested)
@@ -117,18 +120,35 @@ namespace IwoBridge.Core.Cleanup
                 }
 
                 BatchDeleteOutcome outcome = CompletenessGuard.EvaluateBatchDelete(results, batch.Count);
-                if (!outcome.IsSuccess)
+                if (!outcome.IsSuccess && results.Count != batch.Count)
                 {
+                    // Исходы не сопоставить с элементами — что удалено, неизвестно: остановка.
                     int accounted = removed + outcome.RemovedCount;
                     return BatchDeleteOutcome.Failure(
                         $"Учтено до остановки: {accounted}. Пакет не выполнен: {outcome.Error}", accounted);
                 }
 
+                // Отказ по отдельным элементам (нет прав на элемент, элемент занят) не останавливает остальные пакеты:
+                // иначе один неудаляемый элемент держал бы всю очистку. Отказы сообщаются в итоге.
                 removed += outcome.RemovedCount;
+                if (!outcome.IsSuccess)
+                {
+                    notRemoved += batch.Count - outcome.RemovedCount;
+                    foreach (DeleteResult result in results)
+                    {
+                        if (firstItemError is null && !result.IsAccountedFor)
+                        {
+                            firstItemError = result.ErrorCode ?? result.Status.ToString();
+                        }
+                    }
+                }
+
                 ReportQuietly(progress, removed);
             }
 
-            return BatchDeleteOutcome.Success(removed);
+            return notRemoved == 0
+                ? BatchDeleteOutcome.Success(removed)
+                : BatchDeleteOutcome.FinishedWithRefusals($"Сервер не удалил: {notRemoved} (например, {firstItemError}).", removed, notRemoved);
         }
 
         /// <summary>

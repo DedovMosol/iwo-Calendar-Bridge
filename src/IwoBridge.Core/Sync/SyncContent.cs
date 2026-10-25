@@ -95,6 +95,7 @@ namespace IwoBridge.Core.Sync
             Attachments = (attachments ?? Array.Empty<SyncAttachment>())
                 .OrderBy(a => a.Name, StringComparer.Ordinal)
                 .ThenBy(a => a.ContentSha256, StringComparer.Ordinal)
+                .ThenBy(a => a.Length) // два вложения с одним именем: порядок не должен менять отпечаток
                 .ToArray();
         }
 

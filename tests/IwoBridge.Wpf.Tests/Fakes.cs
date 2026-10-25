@@ -20,11 +20,11 @@ namespace IwoBridge.Wpf.Tests
     /// <summary>Сеанс поверх ин-мемори календаря; манифест не пишет файлов.</summary>
     internal sealed class TestSession : ITargetSession
     {
-        public TestSession(InMemoryCalendar calendar, ITargetPageReader? pageReader = null)
+        public TestSession(InMemoryCalendar calendar, ITargetPageReader? pageReader = null, ITargetDeleter? deleter = null)
         {
             Calendar = calendar;
             Manifest = new MemoryManifest();
-            Runner = new CleanupRunner(pageReader ?? calendar, calendar, calendar, calendar, Manifest);
+            Runner = new CleanupRunner(pageReader ?? calendar, calendar, calendar, deleter ?? calendar, Manifest);
         }
 
         public InMemoryCalendar Calendar { get; }
@@ -135,6 +135,10 @@ namespace IwoBridge.Wpf.Tests
         public bool IsShowingDialog { get; set; }
 
         public void ShowHelp() => HelpShown++;
+
+        public HistoryViewModel? HistoryShown { get; private set; }
+
+        public void ShowHistory(Func<HistoryViewModel> create) => HistoryShown = create();
 
         public bool Show(ConnectionViewModel connection)
         {

@@ -140,7 +140,7 @@ namespace IwoBridge.Wpf.Tests
             vm.Start();
             dialogs.OnConnection = Fill("other@example.test", true);
             vm.AddMailboxCommand.Execute(null);
-            var added = (TestSession)vm.CleanupChoices.Last().Session;
+            var added = (TestSession)vm.CleanupChoices.Last().Session!;
 
             dialogs.AskAnswer = true;
             vm.RemoveMailboxCommand.Execute(null);
@@ -152,19 +152,119 @@ namespace IwoBridge.Wpf.Tests
         }
 
         [Fact]
-        public void Start_SavedMailboxWithoutPassword_Dropped()
+        public void Start_SavedMailboxWithoutPassword_KeptAsNeedsPassword_EditRestoresIt()
         {
+            // Пароль почты удалили в Windows (или папку перенесли на другой компьютер): почта не теряется молча.
             var mailboxes = new MemoryMailboxes();
             var orphan = (MemorySettings)mailboxes.CreateNew();
             orphan.SaveProfile(Profile("other@example.test"), null);
             var dialogs = new FakeDialogs();
             var target = new MemorySettings { Profile = Profile(), Credentials = new CredentialSecret("DOMAIN\\user", "secret") };
             var vm = new MainViewModel(target, new FakeConnector(), dialogs, dialogs, () => TimeSpan.Zero, mailboxes: mailboxes);
-
             vm.Start();
 
-            Assert.Single(vm.CleanupChoices);
-            Assert.True(orphan.Deleted);
+            CleanupChoice locked = vm.CleanupChoices.Last();
+            Assert.Contains("нужен пароль", locked.Label);
+            Assert.False(orphan.Deleted);
+            Assert.StartsWith("Приёмник", vm.CleanupChoice!.Label, StringComparison.Ordinal); // выбран приёмник, не добавленная почта
+
+            vm.CleanupChoice = locked;
+            Assert.False(vm.Cleanup.HasSession);
+            ConnectionViewModel? shown = null;
+            dialogs.OnConnection = c =>
+            {
+                shown = c;
+                return Fill("other@example.test", true)(c);
+            };
+            vm.EditMailboxCommand.Execute(null);
+
+            Assert.Equal("mail.example.test", shown!.Server);
+            Assert.Equal("other@example.test", shown.Mailbox);
+            Assert.StartsWith("Почта: other@example.test", vm.CleanupChoice!.Label, StringComparison.Ordinal);
+            Assert.True(vm.Cleanup.HasSession);
+            Assert.NotNull(orphan.Credentials);
+        }
+
+        [Fact]
+        public void EditMailbox_NotRemembered_SavedDataRemoved_ChoiceStays()
+        {
+            var mailboxes = new MemoryMailboxes();
+            var dialogs = new FakeDialogs();
+            var target = new MemorySettings { Profile = Profile(), Credentials = new CredentialSecret("DOMAIN\\user", "secret") };
+            var vm = new MainViewModel(target, new FakeConnector(), dialogs, dialogs, () => TimeSpan.Zero, mailboxes: mailboxes);
+            vm.Start();
+            dialogs.OnConnection = Fill("other@example.test", true);
+            vm.AddMailboxCommand.Execute(null);
+            var first = (TestSession)vm.CleanupChoice!.Session!;
+
+            dialogs.OnConnection = Fill("other@example.test", false);
+            vm.EditMailboxCommand.Execute(null);
+
+            Assert.Empty(mailboxes.Saved());
+            Assert.Equal(2, vm.CleanupChoices.Count);
+            Assert.True(first.IsDisposed);
+            Assert.NotSame(first, vm.CleanupChoice!.Session);
+        }
+
+        [Fact]
+        public void Start_SourceSavedWithoutPassword_AsksForIt()
+        {
+            var dialogs = new FakeDialogs();
+            var titles = new System.Collections.Generic.List<string>();
+            dialogs.OnConnection = c =>
+            {
+                titles.Add(c.Title);
+                return false;
+            };
+            var target = new MemorySettings { Profile = Profile(), Credentials = new CredentialSecret("DOMAIN\\user", "secret") };
+            var source = new MemorySettings { Profile = Profile("src@example.test"), UserName = "DOMAIN\\src" };
+            var vm = new MainViewModel(target, new FakeConnector(), dialogs, dialogs, () => TimeSpan.Zero, source);
+
+            Assert.False(vm.StartHidden());
+            vm.Start();
+
+            Assert.Equal(new[] { "Источник: подключение по EWS" }, titles);
+        }
+
+        [Fact]
+        public void SourceReplaced_WhileSelectedInCleanup_SelectionFollows()
+        {
+            var dialogs = new FakeDialogs();
+            var target = new MemorySettings { Profile = Profile(), Credentials = new CredentialSecret("DOMAIN\\user", "secret") };
+            var source = new MemorySettings { Profile = Profile("src@example.test"), Credentials = new CredentialSecret("DOMAIN\\src", "secret") };
+            var vm = new MainViewModel(target, new FakeConnector(), dialogs, dialogs, () => TimeSpan.Zero, source);
+            vm.Start();
+            vm.CleanupChoice = vm.CleanupChoices.Single(c => c.Label.StartsWith("Источник", StringComparison.Ordinal));
+
+            dialogs.OnConnection = c =>
+            {
+                c.SetPassword("new");
+                c.SaveCommand.ExecuteAsync().GetAwaiter().GetResult();
+                return c.OpenedSession != null;
+            };
+            vm.EditSourceCommand.Execute(null);
+
+            Assert.StartsWith("Источник", vm.CleanupChoice!.Label, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void Remember_CredentialReadFailed_StaysChecked_PasswordNotDeleted()
+        {
+            // Профиль сохранён с паролем, но диспетчер учётных данных не прочитался: отметка не снимается сама.
+            var connection = new ConnectionViewModel(
+                new MemorySettings(), new FakeConnector(), new FakeDialogs(), TimeSpan.Zero, Profile(), null, "Не удалось прочитать сохранённые учётные данные");
+
+            Assert.True(connection.Remember);
+        }
+
+        [Fact]
+        public void PasswordHint_SavedPasswordWithRememberOff_SaysItWillBeDeleted()
+        {
+            var settings = new MemorySettings { Profile = Profile(), Credentials = new CredentialSecret("DOMAIN\\user", "old") };
+            var connection = new ConnectionViewModel(
+                settings, new FakeConnector(), new FakeDialogs(), TimeSpan.Zero, settings.Profile, settings.Credentials) { Remember = false };
+
+            Assert.Contains("будет удалён", connection.PasswordHint);
         }
     }
 }

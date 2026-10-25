@@ -71,10 +71,16 @@ namespace IwoBridge.Core.Sync
         Task<IReadOnlyList<OwnEvent>> ReadOwnEventsAsync(DateTime windowStartUtc, DateTime windowEndUtc, CancellationToken cancellationToken);
 
         /// <summary>Создать копию события (без приглашений участникам).</summary>
-        Task CreateAsync(SourceItem item, IReadOnlyList<AttachmentContent> attachments, CancellationToken cancellationToken);
+        /// <returns>
+        /// Замечания к записанной копии: что перенести нельзя (например, изменённое повторение, которого нет в серии
+        /// копии). Копия при этом записана целиком и считается актуальной: следующий запуск её не перезаписывает, а
+        /// замечание показывается один раз. Пусто — перенесено всё.
+        /// </returns>
+        Task<IReadOnlyList<string>> CreateAsync(SourceItem item, IReadOnlyList<AttachmentContent> attachments, CancellationToken cancellationToken);
 
         /// <summary>Сделать существующую копию равной событию; реализация может пересоздать её (серии).</summary>
-        Task UpdateAsync(string copyItemId, SourceItem item, IReadOnlyList<AttachmentContent> attachments, CancellationToken cancellationToken);
+        /// <returns>Замечания к записанной копии, как у <see cref="CreateAsync"/>.</returns>
+        Task<IReadOnlyList<string>> UpdateAsync(string copyItemId, SourceItem item, IReadOnlyList<AttachmentContent> attachments, CancellationToken cancellationToken);
 
         /// <summary>Удалить копию (в «Удалённые», без отмен участникам).</summary>
         Task DeleteAsync(string copyItemId, CancellationToken cancellationToken);

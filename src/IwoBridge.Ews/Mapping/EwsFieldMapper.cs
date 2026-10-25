@@ -83,14 +83,24 @@ namespace IwoBridge.Ews.Mapping
                 return (DateTime.SpecifyKind(startUtc, DateTimeKind.Utc), DateTime.SpecifyKind(endUtc, DateTimeKind.Utc));
             }
 
-            DateTime start = TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(startUtc, DateTimeKind.Utc), calendarZone).Date;
-            DateTime end = TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(endUtc, DateTimeKind.Utc), calendarZone).Date;
+            DateTime start = NearestMidnight(TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(startUtc, DateTimeKind.Utc), calendarZone));
+            DateTime end = NearestMidnight(TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(endUtc, DateTimeKind.Utc), calendarZone));
             if (end <= start)
             {
-                end = start.AddDays(1);
+                end = start < DateTime.MaxValue.Date ? start.AddDays(1) : DateTime.MaxValue;
             }
 
             return (DateTime.SpecifyKind(start, DateTimeKind.Unspecified), DateTime.SpecifyKind(end, DateTimeKind.Unspecified));
+        }
+
+        /// <summary>
+        /// Ближайшая полночь. Событие «на весь день» начинается в полночь пояса источника; в поясе приёмника это может быть
+        /// 22:00 накануне (источник восточнее) или 02:00 (западнее). Отбрасывание времени сдвинуло бы первое на день
+        /// раньше, ближайшая полночь даёт ту же дату при разнице поясов меньше 12 часов.
+        /// </summary>
+        private static DateTime NearestMidnight(DateTime local)
+        {
+            return local.TimeOfDay >= TimeSpan.FromHours(12) && local.Date < DateTime.MaxValue.Date ? local.Date.AddDays(1) : local.Date;
         }
     }
 }

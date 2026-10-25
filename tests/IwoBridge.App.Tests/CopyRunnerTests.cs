@@ -151,6 +151,123 @@ namespace IwoBridge.App.Tests
         }
 
         [Fact]
+        public async Task ConnectionErrorOnOneEvent_OthersStillCopied()
+        {
+            // Тайм-аут на одном событии (например, крупное вложение) не останавливает остальные: иначе это событие,
+            // стоящее первым, навсегда останавливало бы автокопирование.
+            var source = new InMemorySource("источник", new[] { Event("a", 3), Event("big", 4), Event("c", 5) });
+            var target = new InMemoryCopyTarget { FailOn = i => i.SourceId == "big" ? new TimeoutException("тайм-аут") : null };
+            var runner = new CopyRunner(source, target, ex => ex is TimeoutException || ex is UnauthorizedAccessException, stopsAtOnce: ex => ex is UnauthorizedAccessException);
+
+            CopyResult result = await RunAll(runner);
+
+            Assert.Null(result.Fatal);
+            Assert.Equal(2, result.Created);
+            Assert.Equal("big", Assert.Single(result.Failures).Action.SourceId);
+        }
+
+        [Fact]
+        public async Task ConnectionErrorTwiceInARow_Stops()
+        {
+            var source = new InMemorySource("источник", new[] { Event("a", 3), Event("b", 4), Event("c", 5), Event("d", 6) });
+            var target = new InMemoryCopyTarget { FailOn = i => i.SourceId == "b" || i.SourceId == "c" ? new TimeoutException("нет связи") : null };
+            var runner = new CopyRunner(source, target, ex => ex is TimeoutException, stopsAtOnce: _ => false);
+
+            CopyResult result = await RunAll(runner);
+
+            Assert.IsType<TimeoutException>(result.Fatal);
+            Assert.Equal(1, result.Created); // «d» уже не пробовали
+            Assert.Equal("b", Assert.Single(result.Failures).Action.SourceId);
+        }
+
+        [Fact]
+        public async Task Recreate_CreateFails_OldCopyKept()
+        {
+            // Событие стало серией: новая копия не записалась — прежняя остаётся, событие не теряется.
+            var source = new InMemorySource("источник", new[] { Event("a", 3) });
+            var target = new InMemoryCopyTarget();
+            var runner = new CopyRunner(source, target);
+            await RunAll(runner);
+            source.Put(new SourceItem(
+                "a", "Событие a", "Зал", "Повестка", Day(3), Day(3).AddHours(1),
+                recurrence: new RecurrenceRule(RecurrencePattern.Weekly, 1, Day(3).Date, days: WeekDays.Monday)));
+            target.FailOn = _ => new InvalidOperationException("сервер отклонил");
+
+            CopyResult result = await RunAll(runner);
+
+            Assert.Single(result.Failures);
+            Assert.Equal(SyncActionKind.Recreate, result.Failures[0].Action.Kind);
+            Assert.Equal("a", Assert.Single(target.Copies).Item.SourceId);
+        }
+
+        [Fact]
+        public async Task WrittenWithRemark_CountedAsDone_RemarkWithSubject_NotRepeatedNextRun()
+        {
+            // Приёмник записал копию, но перенёс не всё (изменённого повторения нет в серии копии): копия актуальна,
+            // замечание — в итоге один раз, следующий запуск её не трогает (иначе серия пересоздавалась бы каждый раз).
+            var source = new InMemorySource("источник", new[] { Series("s", -10), Event("a", 3) });
+            var target = new InMemoryCopyTarget
+            {
+                RemarkOn = item => item.SourceId == "s" ? "изменение повторения от 05.10.2026 09:00 не перенесено" : null,
+            };
+            var runner = new CopyRunner(source, target);
+
+            CopyResult first = await RunAll(runner);
+            CopyResult second = await RunAll(runner);
+
+            Assert.True(first.Succeeded);
+            Assert.Equal(2, first.Created);
+            string remark = Assert.Single(first.Remarks);
+            Assert.StartsWith("«Планёрка»: изменение повторения", remark, StringComparison.Ordinal);
+            Assert.Equal(0, second.Done);
+            Assert.Empty(second.Remarks);
+        }
+
+        [Fact]
+        public async Task Recreate_DeleteOfOldCopyFails_NewCopyCountedAsUpdated_FailureReported()
+        {
+            var source = new InMemorySource("источник", new[] { Event("a", 3) });
+            var target = new InMemoryCopyTarget();
+            var runner = new CopyRunner(source, new FailingDelete(target));
+            await RunAll(runner);
+            source.Put(new SourceItem(
+                "a", "Событие a", "Зал", "Повестка", Day(3), Day(3).AddHours(1),
+                recurrence: new RecurrenceRule(RecurrencePattern.Weekly, 1, Day(3).Date, days: WeekDays.Monday)));
+
+            CopyResult result = await RunAll(runner);
+
+            // Новая копия записана — это перезапись; прежняя не удалилась — это сбой (дубль уберёт следующий запуск).
+            Assert.Equal(1, result.Updated);
+            Assert.Equal(SyncActionKind.Recreate, Assert.Single(result.Failures).Action.Kind);
+            Assert.Equal(2, target.Copies.Count);
+        }
+
+        /// <summary>Приёмник, который не удаляет копии (сервер отказал).</summary>
+        private sealed class FailingDelete : ICopyTarget
+        {
+            private readonly InMemoryCopyTarget _inner;
+
+            public FailingDelete(InMemoryCopyTarget inner) => _inner = inner;
+
+            public Task<System.Collections.Generic.IReadOnlyList<BridgeCopy>> ReadCopiesAsync(CancellationToken cancellationToken) =>
+                _inner.ReadCopiesAsync(cancellationToken);
+
+            public Task<System.Collections.Generic.IReadOnlyList<OwnEvent>> ReadOwnEventsAsync(DateTime windowStartUtc, DateTime windowEndUtc, CancellationToken cancellationToken) =>
+                _inner.ReadOwnEventsAsync(windowStartUtc, windowEndUtc, cancellationToken);
+
+            public Task<System.Collections.Generic.IReadOnlyList<string>> CreateAsync(
+                SourceItem item, System.Collections.Generic.IReadOnlyList<AttachmentContent> attachments, CancellationToken cancellationToken) =>
+                _inner.CreateAsync(item, attachments, cancellationToken);
+
+            public Task<System.Collections.Generic.IReadOnlyList<string>> UpdateAsync(
+                string copyItemId, SourceItem item, System.Collections.Generic.IReadOnlyList<AttachmentContent> attachments, CancellationToken cancellationToken) =>
+                _inner.UpdateAsync(copyItemId, item, attachments, cancellationToken);
+
+            public Task DeleteAsync(string copyItemId, CancellationToken cancellationToken) =>
+                throw new InvalidOperationException("сервер не удалил элемент");
+        }
+
+        [Fact]
         public async Task Stop_BeforeNextEvent_ExactCounts()
         {
             var source = new InMemorySource("источник", new[] { Event("a", 3), Event("b", 4), Event("c", 5) });

@@ -178,6 +178,23 @@ namespace IwoBridge.Core.Tests
             Assert.Equal(25, confirmed.Count(SyncActionKind.Delete));
         }
 
+        [Fact]
+        public void MassRecreate_Blocked_LikeMassDelete()
+        {
+            // 25 серий источник вдруг отдаёт одиночными событиями (сбой чтения правил): пересоздание удалило бы все
+            // повторения, кроме первого, — тот же риск, что массовое удаление.
+            SourceEvent[] singles = Enumerable.Range(0, 25).Select(i => Source("s" + i, Day(1).AddHours(i))).ToArray();
+            BridgeCopy[] series = singles
+                .Select((s, i) => new BridgeCopy("t" + i, s.SourceId, ItemKind.RecurringMaster, s.SpanStartUtc, DateTime.MaxValue, "h"))
+                .ToArray();
+
+            SyncPlan blocked = SyncPlanner.Plan(From, To, new SourceSnapshot(singles, true), series);
+
+            Assert.Equal(25, blocked.Count(SyncActionKind.Recreate));
+            Assert.False(blocked.CanApply);
+            Assert.Contains("пересоздаётся", blocked.BlockReason);
+        }
+
         [Theory]
         [InlineData(30, 6, false)] // 20 % копий периода — подозрительно
         [InlineData(100, 6, true)] // 6 % — обычная правка

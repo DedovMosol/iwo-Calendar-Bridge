@@ -89,8 +89,9 @@ namespace IwoBridge.Ews.Tests
             DateTime LocalMidnight(int d) => DateTime.SpecifyKind(day.AddDays(d) - offset, DateTimeKind.Utc);
 
             byte[] file = Encoding.UTF8.GetBytes("live attachment");
+            byte[] second = Encoding.UTF8.GetBytes("second live attachment");
             var single = new SourceItem("live-single", "Live: одиночное", "Зал 1", "Описание события", At(0, 6), At(0, 7),
-                attachments: new[] { new SyncAttachment("заметка.txt", file.Length) });
+                attachments: new[] { new SyncAttachment("заметка.txt", file.Length), new SyncAttachment("вторая.txt", second.Length) });
             var allDay = new SourceItem("live-allday", "Live: весь день", null, null, LocalMidnight(1), LocalMidnight(2), isAllDay: true, busy: FreeBusy.OutOfOffice);
             var secret = new SourceItem("live-private", "Live: личное содержимое", "Скрытое место", "Скрытое описание", At(1, 9), At(1, 10),
                 sensitivity: ItemSensitivity.Private);
@@ -105,6 +106,8 @@ namespace IwoBridge.Ews.Tests
                 {
                     new SourceException(seriesStart.AddDays(7), true),
                     new SourceException(seriesStart.AddDays(14), false, seriesStart.AddDays(14).AddHours(1), seriesStart.AddDays(14).AddHours(2), subjectOfThird),
+                    // Обычная серия, но одно повторение личное: в копию — только время, тема «Личное».
+                    new SourceException(seriesStart.AddDays(21), false, seriesStart.AddDays(21), seriesStart.AddDays(21).AddHours(1), "Live: тайное", "Тайный зал", "Тайное описание", isPrivate: true),
                 });
 
             // Описание с оформлением — RTF, как его отдаёт Outlook (MapiRtf).
@@ -113,7 +116,7 @@ namespace IwoBridge.Ews.Tests
             var rich = new SourceItem("live-rich", "Live: оформление", null, "жирный текст", At(3, 6), At(3, 7), rtfCompressed: MapiRtf.FromRtf(rtfDocument));
 
             var source = new InMemorySource("живой источник", Array.Empty<SourceItem>());
-            source.Put(single, new[] { new AttachmentContent("заметка.txt", file) });
+            source.Put(single, new[] { new AttachmentContent("заметка.txt", file), new AttachmentContent("вторая.txt", second) });
             source.Put(allDay);
             source.Put(secret);
             source.Put(Series("Live: перенесённое"));
@@ -147,8 +150,10 @@ namespace IwoBridge.Ews.Tests
             Assert.Equal(single.EndUtc, gotSingle.EndUtc);
             Assert.Equal("Зал 1", gotSingle.Location);
             Assert.Contains("Описание события", gotSingle.Body);
-            Assert.Equal("заметка.txt", gotSingle.Attachments.Single().Name);
-            IReadOnlyList<AttachmentContent> gotFile = await target.WrittenCopies.LoadAttachmentsAsync(gotSingle, ct);
+            Assert.Equal(new[] { "вторая.txt", "заметка.txt" }, gotSingle.Attachments.Select(a => a.Name).OrderBy(n => n, StringComparer.Ordinal));
+            IReadOnlyList<AttachmentContent> gotFiles = await target.WrittenCopies.LoadAttachmentsAsync(gotSingle, ct);
+            Assert.Equal(second, gotFiles.Single(f => f.Name == "вторая.txt").Content);
+            AttachmentContent[] gotFile = gotFiles.Where(f => f.Name == "заметка.txt").ToArray();
 
             // Описание с оформлением: RTF записан и читается, текст из него Exchange построил сам.
             SourceItem gotRich = written.Items.Single(i => i.Subject == rich.Subject);
@@ -174,6 +179,10 @@ namespace IwoBridge.Ews.Tests
             Assert.Equal(seriesStart, gotSeries.StartUtc);
             Assert.Contains(gotSeries.Exceptions, e => e.IsDeleted && e.OriginalStartUtc == seriesStart.AddDays(7));
             Assert.Contains(gotSeries.Exceptions, e => !e.IsDeleted && e.Subject == "Live: перенесённое" && e.StartUtc == seriesStart.AddDays(14).AddHours(1));
+            SourceException gotPrivate = gotSeries.Exceptions.Single(e => e.OriginalStartUtc == seriesStart.AddDays(21));
+            Assert.True(gotPrivate.IsPrivate);
+            Assert.Equal(CopyRules.PrivateSubject, gotPrivate.Subject);
+            Assert.DoesNotContain("Тайн", (gotPrivate.Location ?? string.Empty) + (gotPrivate.Body ?? string.Empty));
 
             // 4. Правка и удаление в источнике: одна копия перезаписывается, одна удаляется.
             source.Put(new SourceItem("live-single", "Live: одиночное (изменено)", "Зал 3", "Новое описание", At(0, 6), At(0, 8)));

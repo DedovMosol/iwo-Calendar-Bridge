@@ -61,15 +61,38 @@ namespace IwoBridge.Ews.Tests
         }
 
         [Fact]
-        public void FirstUse_TrustedChain_NameMismatchIgnored_PinsSha256()
+        public void FirstUse_TrustedChain_PinsSha256()
         {
             var validator = new EwsCertificateValidator(EwsUrl, null);
 
-            bool accepted = validator.Validate(EwsSender(), ServerCert, null, SslPolicyErrors.RemoteCertificateNameMismatch);
+            bool accepted = validator.Validate(EwsSender(), ServerCert, null, SslPolicyErrors.None);
 
             Assert.True(accepted);
             Assert.Equal(CertificateDecision.AcceptFirstUse, validator.LastDecision);
             Assert.Equal(Sha256Of(ServerCert), validator.PinnedThumbprint);
+        }
+
+        [Fact]
+        public void FirstUse_NameMismatch_NotPinnedSilently_ShownToPerson()
+        {
+            // Публичный сертификат другого сайта (перехват) или подключение по IP: без вопроса не закрепляется.
+            var validator = new EwsCertificateValidator(EwsUrl, null);
+
+            bool accepted = validator.Validate(EwsSender(), ServerCert, null, SslPolicyErrors.RemoteCertificateNameMismatch);
+
+            Assert.False(accepted);
+            Assert.Equal(CertificateDecision.RejectUntrusted, validator.LastDecision);
+            Assert.Null(validator.PinnedThumbprint);
+            Assert.NotNull(validator.LastPresented);
+        }
+
+        [Fact]
+        public void Pinned_NameMismatch_Accepted()
+        {
+            var validator = new EwsCertificateValidator(EwsUrl, Sha256Of(ServerCert));
+
+            Assert.True(validator.Validate(EwsSender(), ServerCert, null, SslPolicyErrors.RemoteCertificateNameMismatch));
+            Assert.Equal(CertificateDecision.AcceptPinned, validator.LastDecision);
         }
 
         [Fact]

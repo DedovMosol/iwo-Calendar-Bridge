@@ -178,7 +178,7 @@ namespace IwoBridge.Core.Cleanup
             switch (item.Kind)
             {
                 case ItemKind.Single:
-                    return TimeWindow.Overlaps(item.StartUtc, item.EndUtc, scope.WindowStartUtc, scope.WindowEndUtc)
+                    return TimeWindow.Overlaps(item.StartUtc, item.EndUtc, item.IsAllDay, scope.WindowStartUtc, scope.WindowEndUtc)
                         ? Decision.Delete
                         : Decision.Skip;
 
@@ -205,16 +205,16 @@ namespace IwoBridge.Core.Cleanup
             DateTime lastEnd = lastStart == DateTime.MaxValue ? DateTime.MaxValue : SafeAdd(lastStart, duration);
 
             bool everyModifiedInside = master.ModifiedOccurrences.All(
-                span => TimeWindow.Overlaps(span.StartUtc, span.EndUtc, windowStart, windowEnd));
+                span => TimeWindow.Overlaps(span.StartUtc, span.EndUtc, master.IsAllDay, windowStart, windowEnd));
             bool anyModifiedInside = master.ModifiedOccurrences.Any(
-                span => TimeWindow.Overlaps(span.StartUtc, span.EndUtc, windowStart, windowEnd));
+                span => TimeWindow.Overlaps(span.StartUtc, span.EndUtc, master.IsAllDay, windowStart, windowEnd));
 
             // Серия целиком в периоде — если в период попадают первое и последнее повторение по правилу (по единому
             // правилу TimeWindow.Overlaps: и то, что начинается до периода и заканчивается в нём, — «в периоде»;
             // повторения между ними тогда попадают тоже) и каждое изменённое повторение. Исключение, перенесённое за
             // пределы периода, запрещает удалять серию целиком: вместе с мастером исчезло бы событие вне периода.
-            bool firstInside = TimeWindow.Overlaps(first, SafeAdd(first, duration), windowStart, windowEnd);
-            bool lastInside = lastStart != DateTime.MaxValue && TimeWindow.Overlaps(lastStart, lastEnd, windowStart, windowEnd);
+            bool firstInside = TimeWindow.Overlaps(first, SafeAdd(first, duration), master.IsAllDay, windowStart, windowEnd);
+            bool lastInside = lastStart != DateTime.MaxValue && TimeWindow.Overlaps(lastStart, lastEnd, master.IsAllDay, windowStart, windowEnd);
             if (firstInside && lastInside && everyModifiedInside)
             {
                 return Decision.Delete;
@@ -238,7 +238,7 @@ namespace IwoBridge.Core.Cleanup
         {
             return occurrence.IsSeriesInstance
                 && occurrence.SeriesUid != null
-                && TimeWindow.Overlaps(occurrence.StartUtc, occurrence.EndUtc, scope.WindowStartUtc, scope.WindowEndUtc);
+                && TimeWindow.Overlaps(occurrence.StartUtc, occurrence.EndUtc, occurrence.IsAllDay, scope.WindowStartUtc, scope.WindowEndUtc);
         }
 
         /// <summary>Сложение даты и длительности с защитой от переполнения (возвращает MaxValue).</summary>

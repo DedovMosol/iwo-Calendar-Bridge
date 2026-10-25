@@ -12,6 +12,8 @@ param(
 #   copy-4-result.png    copy result
 #   cleanup-1-choose.png cleanup tab: mailbox, period
 #   cleanup-2-preview.png, cleanup-3-confirm.png, cleanup-4-result.png
+#   help.png             help window
+#   history.png          history window (operations of this run)
 # Controls are found by AutomationId; the file is ASCII-only (Windows PowerShell 5.1 reads BOM-less UTF-8 as ANSI).
 Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
 $shot = Join-Path $PSScriptRoot 'screenshot.ps1'
@@ -111,6 +113,23 @@ if ($dialog -ne $null) {
     Click (Find-ById $dialog 'ConfirmDeleteButton')
     Start-Sleep -Seconds 7
     Shot 'cleanup-4-result.png'
+}
+
+# --- History: the copy and the cleanup above, from the in-memory journal ---
+Click (Find-ById $root 'HistoryButton')
+Start-Sleep -Seconds 2
+$history = Find-Owned 'HistoryRows'
+if ($history -ne $null) {
+    # The copy row is selected: the cleanup details show the manifest path, which contains the local user folder.
+    $isItem = New-Object System.Windows.Automation.PropertyCondition($AE::ControlTypeProperty, [System.Windows.Automation.ControlType]::DataItem)
+    $rows = (Find-ById $history 'HistoryRows').FindAll([System.Windows.Automation.TreeScope]::Children, $isItem)
+    if ($rows.Count -gt 1) {
+        $rows[1].GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern).Select()
+        Start-Sleep -Milliseconds 500
+    }
+    ShotWindow $history 'history.png'
+    $history.GetCurrentPattern([System.Windows.Automation.WindowPattern]::Pattern).Close()
+    Start-Sleep -Milliseconds 500
 }
 
 Stop-Process -Id $p.Id

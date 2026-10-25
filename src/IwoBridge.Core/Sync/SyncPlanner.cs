@@ -129,7 +129,10 @@ namespace IwoBridge.Core.Sync
                 }
             }
 
-            string? blockReason = options.AllowMassDelete ? null : MassDeleteReason(source, copiesInWindow.Length, deletes.Count, options);
+            // Пересоздание удаляет прежнюю копию: серия, пересоздаваемая одиночным событием, теряет все повторения, кроме
+            // первого. Массовое пересоздание (например, источник вдруг перестал отдавать правила серий) — тот же риск,
+            // что массовое удаление, и защищается тем же порогом.
+            string? blockReason = options.AllowMassDelete ? null : MassDeleteReason(source, copiesInWindow.Length, deletes.Count + recreates.Count, options);
 
             // Порядок применения: сначала убрать лишнее и пересоздать (освобождает место и метки), затем
             // перезаписать, затем создать. Внутри — по времени, чтобы ход работы был понятен человеку.
@@ -173,7 +176,7 @@ namespace IwoBridge.Core.Sync
             {
                 return string.Format(
                     CultureInfo.InvariantCulture,
-                    "Удаляется {0} копий — больше {1} за один прогон. Если это ожидаемо, подтвердите удаление явно.",
+                    "Удаляется или пересоздаётся {0} копий — больше {1} за один прогон. Если это ожидаемо, подтвердите удаление явно.",
                     deletes,
                     options.MaxDeletes);
             }
@@ -182,7 +185,7 @@ namespace IwoBridge.Core.Sync
             {
                 return string.Format(
                     CultureInfo.InvariantCulture,
-                    "Из {0} копий периода удаляется {1} — больше {2:0%}. Если это ожидаемо, подтвердите удаление явно.",
+                    "Из {0} копий периода удаляется или пересоздаётся {1} — больше {2:0%}. Если это ожидаемо, подтвердите удаление явно.",
                     copiesInWindow,
                     deletes,
                     options.MaxDeleteShare);

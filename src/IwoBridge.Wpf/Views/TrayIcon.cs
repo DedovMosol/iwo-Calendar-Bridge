@@ -40,7 +40,7 @@ namespace IwoBridge.Wpf.Views
 
             _menu = new Forms.ContextMenuStrip();
             _menu.Items.Add("Открыть", null, (_, __) => _show());
-            _menu.Items.Add("Скопировать сейчас", null, (_, __) => _model.Copy.Auto.RunNowCommand.Execute(null));
+            _menu.Items.Add("Скопировать сейчас", null, (_, __) => RunNow());
             _menu.Items.Add("Справка", null, (_, __) => _model.HelpCommand.Execute(null));
             _menu.Items.Add(new Forms.ToolStripSeparator());
             _menu.Items.Add("Выход", null, (_, __) => _exit());
@@ -49,7 +49,32 @@ namespace IwoBridge.Wpf.Views
             _icon.DoubleClick += OnDoubleClick;
             _model.Copy.Auto.PropertyChanged += OnAutoChanged;
             _model.Copy.Auto.Problem += OnProblem;
+            _model.Copy.Auto.Postponed += OnPostponed;
             Update();
+        }
+
+        /// <summary>
+        /// «Скопировать сейчас». Нельзя прямо сейчас (копирование уже идёт, автокопирование приостановлено после ошибки) —
+        /// открывается окно: в его строке состояния написано, почему и что сделать, а не молчаливое «ничего не произошло».
+        /// </summary>
+        private void RunNow()
+        {
+            if (_model.Copy.Auto.RunNowCommand.CanExecute(null))
+            {
+                _model.Copy.Auto.RunNowCommand.Execute(null);
+            }
+            else
+            {
+                _show();
+            }
+        }
+
+        private void OnPostponed(object? sender, string message)
+        {
+            if (_icon.Visible)
+            {
+                _icon.ShowBalloonTip(BalloonMilliseconds, "Автокопирование", message, Forms.ToolTipIcon.Info);
+            }
         }
 
         /// <summary>Окно ушло в область уведомлений — один раз подсказать, где теперь программа.</summary>
@@ -72,6 +97,7 @@ namespace IwoBridge.Wpf.Views
         {
             _model.Copy.Auto.PropertyChanged -= OnAutoChanged;
             _model.Copy.Auto.Problem -= OnProblem;
+            _model.Copy.Auto.Postponed -= OnPostponed;
             _icon.DoubleClick -= OnDoubleClick;
             _icon.Visible = false;
             _icon.Dispose();

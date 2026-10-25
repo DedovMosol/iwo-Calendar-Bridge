@@ -9,6 +9,7 @@ namespace IwoBridge.App.Cleanup
     ///    <see cref="ChangedSincePreviewCount"/>);
     ///  - <see cref="Refused"/> — безопасный отказ до удаления (неполные данные, манифест не записан);
     ///  - <see cref="Cancelled"/> — остановлено пользователем между пакетами; счётчики точные;
+    ///  - <see cref="FinishedWithRefusals"/> — пройден весь список, сервер отказал по <see cref="RefusedCount"/> элементам;
     ///  - иначе — ошибка во время удаления, счётчики показывают, что успело выполниться.
     /// Прерванную очистку можно запустить снова: уже удалённое сервер вернёт как «нет такого элемента», и оно
     /// засчитается без повторного удаления. Счётчики учитывают и элементы, которых к моменту удаления уже не было.
@@ -25,9 +26,13 @@ namespace IwoBridge.App.Cleanup
             int newSincePreviewCount,
             int changedSincePreviewCount,
             string? manifestPath,
-            Exception? exception = null)
+            Exception? exception = null,
+            int refusedCount = 0,
+            bool finishedWithRefusals = false)
         {
             Exception = exception;
+            RefusedCount = refusedCount;
+            FinishedWithRefusals = finishedWithRefusals;
             Succeeded = succeeded;
             Refused = refused;
             Cancelled = cancelled;
@@ -70,6 +75,15 @@ namespace IwoBridge.App.Cleanup
         /// <summary>Исключение адаптера, оборвавшее удаление (для понятной причины в окне); иначе <c>null</c>.</summary>
         public Exception? Exception { get; }
 
+        /// <summary>Сколько элементов сервер отказался удалить (нет прав на элемент, элемент занят).</summary>
+        public int RefusedCount { get; }
+
+        /// <summary>
+        /// Весь список пройден (и целые события, и экземпляры серий), не удалено только то, от чего сервер отказался
+        /// (<see cref="RefusedCount"/>). Не путать с ошибкой: у неё список оборван, а отказы до обрыва тоже в счёте.
+        /// </summary>
+        public bool FinishedWithRefusals { get; }
+
         public static CleanupResult Success(
             int deletedCount, int trimmedCount, int newSincePreview, int changedSincePreview, string? manifestPath)
         {
@@ -101,15 +115,46 @@ namespace IwoBridge.App.Cleanup
             int newSincePreview,
             int changedSincePreview,
             string? manifestPath,
-            Exception? exception = null)
+            Exception? exception = null,
+            int refusedCount = 0)
         {
             if (string.IsNullOrWhiteSpace(message))
             {
                 throw new ArgumentException("Нужно описание ошибки.", nameof(message));
             }
 
+            if (refusedCount < 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(refusedCount));
+            }
+
             return new CleanupResult(
-                false, false, false, message, deletedCount, trimmedCount, newSincePreview, changedSincePreview, manifestPath, exception);
+                false, false, false, message, deletedCount, trimmedCount, newSincePreview, changedSincePreview, manifestPath, exception, refusedCount);
+        }
+
+        /// <summary>Весь список пройден, сервер не удалил <paramref name="refusedCount"/> элементов.</summary>
+        public static CleanupResult WithRefusals(
+            string message,
+            int deletedCount,
+            int trimmedCount,
+            int refusedCount,
+            int newSincePreview,
+            int changedSincePreview,
+            string manifestPath)
+        {
+            if (string.IsNullOrWhiteSpace(message))
+            {
+                throw new ArgumentException("Нужно описание отказов.", nameof(message));
+            }
+
+            if (refusedCount <= 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(refusedCount));
+            }
+
+            return new CleanupResult(
+                false, false, false, message, deletedCount, trimmedCount, newSincePreview, changedSincePreview, manifestPath,
+                exception: null, refusedCount: refusedCount, finishedWithRefusals: true);
         }
     }
 }

@@ -51,6 +51,32 @@ namespace IwoBridge.App.Tests
         // ---- Разбор ----
 
         [Fact]
+        public void CopySettings_PeriodInPast_KeptWithSign_StartNotAfterEnd()
+        {
+            var past = new CopySettings(daysBack: 400, daysForward: -300);
+            Assert.Equal(new DateTime(2025, 9, 1), past.Window(new DateTime(2026, 10, 6)).First);
+            Assert.Equal(new DateTime(2025, 12, 10), past.Window(new DateTime(2026, 10, 6)).Last);
+            Assert.Equal(-5, new CopySettings(daysBack: 5, daysForward: -20).DaysForward); // конец не раньше начала
+        }
+
+        [Fact]
+        public void CopySettings_FileLocked_DefaultsAndNotWritable_FileKept()
+        {
+            Directory.CreateDirectory(_directory);
+            string path = Path.Combine(_directory, "copy.json");
+            CopySettingsFile.Save(path, new CopySettings(autoCopy: true, intervalMinutes: 60));
+            using (new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+            {
+                Assert.False(CopySettingsFile.TryLoad(path, out CopySettings locked));
+                Assert.False(locked.AutoCopy);
+            }
+
+            Assert.True(CopySettingsFile.TryLoad(path, out CopySettings read));
+            Assert.True(read.AutoCopy);
+            Assert.Equal(60, read.IntervalMinutes);
+        }
+
+        [Fact]
         public void Save_WithUserName_ReadBack_ProfileUnchanged_WithoutUserName_Absent()
         {
             string path = Path.Combine(_directory, "connection.json");

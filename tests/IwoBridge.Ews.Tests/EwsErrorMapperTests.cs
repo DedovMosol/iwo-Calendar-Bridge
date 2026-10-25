@@ -62,6 +62,19 @@ namespace IwoBridge.Ews.Tests
                 EwsErrorMapper.MapException(new ServiceRequestException("тест", new System.IO.IOException("обрыв"))));
         }
 
+        [Theory]
+        [InlineData(ServiceError.ErrorMailboxMoveInProgress, OperationErrorKind.ServerBusy)]
+        [InlineData(ServiceError.ErrorAccessDenied, OperationErrorKind.AccessDenied)]
+        [InlineData(ServiceError.ErrorTimeoutExpired, OperationErrorKind.Timeout)]
+        public void MapException_ItemErrorFromResponse_KeepsServerCode(ServiceError error, OperationErrorKind expected)
+        {
+            // DeleteItems сообщает ошибку элемента в ответе: повтор и остановка пакета — по тому же коду, что у исключения.
+            var exception = new EwsItemErrorException(error, "сообщение сервера");
+
+            Assert.Equal(expected, EwsErrorMapper.MapException(exception));
+            Assert.Contains(error.ToString(), exception.Message);
+        }
+
         [Fact]
         public void ServerBackOff_NoHint_IsNull()
         {

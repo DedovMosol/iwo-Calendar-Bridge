@@ -40,8 +40,10 @@ namespace IwoBridge.Wpf.Views
         {
             if (!File.Exists(path))
             {
-                MessageBox.Show(ActiveWindow() ?? Application.Current.MainWindow, "Файл не найден:\n" + path, "Список удаляемого",
-                    MessageBoxButton.OK, MessageBoxImage.Information);
+                // Над окном, из которого спросили (в том числе «История»), а не над главным окном за ним.
+                Window owner = Application.Current.Windows.OfType<Window>().FirstOrDefault(w => w.IsActive)
+                    ?? ActiveWindow() ?? Application.Current.MainWindow;
+                MessageBox.Show(owner, "Файл не найден:\n" + path, "iwo Calendar Bridge", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
@@ -76,15 +78,38 @@ namespace IwoBridge.Wpf.Views
             return window.ShowDialog() == true;
         }
 
+        /// <summary>История — немодальная, как справка: можно смотреть журнал и работать в программе одновременно.</summary>
+        public void ShowHistory(Func<HistoryViewModel> create)
+        {
+            HistoryWindow? open = Application.Current?.Windows.OfType<HistoryWindow>().FirstOrDefault();
+            if (open != null)
+            {
+                if (open.WindowState == WindowState.Minimized)
+                {
+                    open.WindowState = WindowState.Normal;
+                }
+
+                open.Activate();
+                return;
+            }
+
+            new HistoryWindow(create()) { Owner = Application.Current?.MainWindow?.IsVisible == true ? Application.Current.MainWindow : null }.Show();
+        }
+
         /// <summary>
         /// Владелец нового окна — последнее открытое видимое окно программы: модальное окно всегда открыто позже своего
         /// владельца. Не «активное»: если пользователь переключился в другую программу, активного окна нет, и вопрос
         /// из окна «Подключение» иначе достался бы главному окну, а окно «Подключение» осталось бы доступным.
         /// </summary>
+        /// <remarks>
+        /// Справка не владеет вопросами (она немодальная, её открывают в стороне, и вопрос по центру справки на другом
+        /// мониторе выглядел бы зависанием главного окна), свёрнутое окно — тоже: вопрос открылся бы невидимым.
+        /// </remarks>
         private static Window? ActiveWindow()
         {
             Application? app = Application.Current;
-            return app?.Windows.OfType<Window>().LastOrDefault(w => w.IsVisible);
+            return app?.Windows.OfType<Window>().LastOrDefault(
+                w => w.IsVisible && w.WindowState != WindowState.Minimized && !(w is HelpWindow) && !(w is HistoryWindow));
         }
     }
 }

@@ -121,6 +121,12 @@ namespace IwoBridge.InMemory
         /// <summary>Исключение при записи этого события; <c>null</c> — запись проходит.</summary>
         public Func<SourceItem, Exception?>? FailOn { get; set; }
 
+        /// <summary>
+        /// Замечание к записи этого события (как у EWS: изменённое повторение не нашлось в копии серии) — копия всё равно
+        /// записывается; <c>null</c> — без замечаний.
+        /// </summary>
+        public Func<SourceItem, string?>? RemarkOn { get; set; }
+
         /// <summary>Копии в календаре (для проверок и демонстрационного режима).</summary>
         public IReadOnlyList<InMemoryCopy> Copies
         {
@@ -169,7 +175,7 @@ namespace IwoBridge.InMemory
             }
         }
 
-        public Task CreateAsync(SourceItem item, IReadOnlyList<AttachmentContent> attachments, CancellationToken cancellationToken)
+        public Task<IReadOnlyList<string>> CreateAsync(SourceItem item, IReadOnlyList<AttachmentContent> attachments, CancellationToken cancellationToken)
         {
             ThrowIfFails(item);
             lock (_sync)
@@ -177,10 +183,10 @@ namespace IwoBridge.InMemory
                 AddCore(item, attachments);
             }
 
-            return Task.CompletedTask;
+            return Task.FromResult(RemarksFor(item));
         }
 
-        public Task UpdateAsync(string copyItemId, SourceItem item, IReadOnlyList<AttachmentContent> attachments, CancellationToken cancellationToken)
+        public Task<IReadOnlyList<string>> UpdateAsync(string copyItemId, SourceItem item, IReadOnlyList<AttachmentContent> attachments, CancellationToken cancellationToken)
         {
             ThrowIfFails(item);
             lock (_sync)
@@ -193,7 +199,13 @@ namespace IwoBridge.InMemory
                 _copies[copyItemId] = new InMemoryCopy(copyItemId, item, attachments);
             }
 
-            return Task.CompletedTask;
+            return Task.FromResult(RemarksFor(item));
+        }
+
+        private IReadOnlyList<string> RemarksFor(SourceItem item)
+        {
+            string? remark = RemarkOn?.Invoke(item);
+            return remark is null ? Array.Empty<string>() : new[] { remark };
         }
 
         public Task DeleteAsync(string copyItemId, CancellationToken cancellationToken)

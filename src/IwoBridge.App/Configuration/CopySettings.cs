@@ -38,8 +38,10 @@ namespace IwoBridge.App.Configuration
             PrivateEvents = Enum.IsDefined(typeof(PrivateEvents), privateEvents) ? privateEvents : PrivateEvents.HideDetails;
             AutoCopy = autoCopy;
             IntervalMinutes = Array.IndexOf(Intervals, intervalMinutes) >= 0 ? intervalMinutes : 30;
+            // Дни со знаком: период, целиком лежащий в прошлом (DaysForward < 0) или в будущем (DaysBack < 0), сохраняется
+            // как есть, а не сжимается до «сегодня». Начало не позже конца.
             DaysBack = Clamp(daysBack);
-            DaysForward = Clamp(daysForward);
+            DaysForward = Math.Max(Clamp(daysForward), -DaysBack);
         }
 
         /// <summary>Источник — Outlook этого компьютера (иначе — подключение «Источник по EWS»).</summary>
@@ -70,7 +72,7 @@ namespace IwoBridge.App.Configuration
         /// <summary>Период автокопирования на дату <paramref name="today"/>: первый и последний день включительно.</summary>
         public (DateTime First, DateTime Last) Window(DateTime today) => (today.Date.AddDays(-DaysBack), today.Date.AddDays(DaysForward));
 
-        private static int Clamp(int days) => Math.Max(0, Math.Min(MaxDays, days));
+        private static int Clamp(int days) => Math.Max(-MaxDays, Math.Min(MaxDays, days));
     }
 
     /// <summary>
@@ -82,6 +84,39 @@ namespace IwoBridge.App.Configuration
         private static readonly Encoding Utf8NoBom = new UTF8Encoding(false);
 
         public static CopySettings Load(string path)
+        {
+            TryLoad(path, out CopySettings settings);
+            return settings;
+        }
+
+        /// <summary>
+        /// Чтение с признаком, можно ли потом перезаписать файл. Файл есть, но не открылся (занят антивирусом при входе в
+        /// Windows, нет прав) — после трёх попыток значения по умолчанию и <c>false</c>: записав их, программа стёрла бы
+        /// настройки человека. Повреждённое содержимое — значения по умолчанию и <c>true</c>: в нём нечего беречь.
+        /// </summary>
+        public static bool TryLoad(string path, out CopySettings settings)
+        {
+            for (int attempt = 1; ; attempt++)
+            {
+                try
+                {
+                    settings = Read(path);
+                    return true;
+                }
+                catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+                {
+                    if (attempt >= 3)
+                    {
+                        settings = new CopySettings();
+                        return false;
+                    }
+
+                    System.Threading.Thread.Sleep(200);
+                }
+            }
+        }
+
+        private static CopySettings Read(string path)
         {
             try
             {
@@ -109,8 +144,7 @@ namespace IwoBridge.App.Configuration
                         d.OutlookCalendarKey);
                 }
             }
-            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException || ex is SerializationException || ex is XmlException
-                || ex is ArgumentException || ex is NotSupportedException)
+            catch (Exception ex) when (ex is SerializationException || ex is XmlException || ex is ArgumentException || ex is NotSupportedException)
             {
                 return new CopySettings();
             }

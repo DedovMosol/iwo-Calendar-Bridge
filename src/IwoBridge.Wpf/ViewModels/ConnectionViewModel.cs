@@ -83,8 +83,10 @@ namespace IwoBridge.Wpf.ViewModels
             Title = title;
             _keepProfileWithoutPassword = keepProfileWithoutPassword;
 
-            // Новое подключение — запомнить (так привычнее); прежнее — как было сохранено.
-            _remember = savedProfile is null || savedCredentials != null;
+            // Новое подключение — запомнить (так привычнее); прежнее — как было сохранено. Без пароля сохраняется только
+            // профиль с учётной записью (savedUserName), поэтому по ней и видно, что «Запомнить» было снято. Запись в
+            // диспетчере учётных данных, которая не прочиталась, отметку не снимает: иначе сохранение удалило бы пароль.
+            _remember = savedProfile is null || savedUserName is null;
             _settings = settings ?? throw new ArgumentNullException(nameof(settings));
             _connector = connector ?? throw new ArgumentNullException(nameof(connector));
             _dialogs = dialogs ?? throw new ArgumentNullException(nameof(dialogs));
@@ -138,6 +140,12 @@ namespace IwoBridge.Wpf.ViewModels
 
         /// <summary>Сеанс, открытый после сохранения; <c>null</c> — окно закрыто без сохранения.</summary>
         public ITargetSession? OpenedSession { get; private set; }
+
+        /// <summary>Профиль открытого сеанса (для повторного открытия окна заполненным, даже если он не сохранён).</summary>
+        public ConnectionProfile? OpenedProfile { get; private set; }
+
+        /// <summary>Учётная запись открытого сеанса — без пароля.</summary>
+        public string? OpenedUserName { get; private set; }
 
         // ---- Поля ----
 
@@ -212,7 +220,9 @@ namespace IwoBridge.Wpf.ViewModels
 
         /// <summary>Подсказка под полем пароля.</summary>
         public string PasswordHint => KeepsSavedPassword
-            ? "Пароль сохранён в Windows. Оставьте поле пустым, чтобы не менять его."
+            ? _remember
+                ? "Пароль сохранён в Windows. Оставьте поле пустым, чтобы не менять его."
+                : "Пароль сохранён в Windows и при сохранении будет удалён. Оставьте поле пустым, чтобы войти с ним сейчас."
             : _remember
                 ? "Хранится только в диспетчере учётных данных Windows, не в файлах программы."
                 : "Пароль нигде не сохраняется и нужен только до закрытия программы.";
@@ -474,6 +484,8 @@ namespace IwoBridge.Wpf.ViewModels
                 return;
             }
 
+            OpenedProfile = profile;
+            OpenedUserName = credentials!.UserName;
             OpenedSession = _connector.Open(profile!, credentials!);
             Saved?.Invoke(this, EventArgs.Empty);
         }

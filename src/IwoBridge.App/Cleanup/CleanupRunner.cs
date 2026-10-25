@@ -133,8 +133,9 @@ namespace IwoBridge.App.Cleanup
                 return ManifestNotWritten(ex);
             }
 
-            // Итог неуспешной фазы (отмена или ошибка) с точными счётчиками — одно место для обеих фаз (DRY).
-            CleanupResult Stopped(BatchDeleteOutcome outcome, int deleted, int trimmed, string fallbackError)
+            // Итог неуспешной фазы (отмена или ошибка) с точными счётчиками — одно место для обеих фаз (DRY). Отказы
+            // сервера по элементам из уже пройденной фазы сохраняются в счёте.
+            CleanupResult Stopped(BatchDeleteOutcome outcome, int deleted, int trimmed, int refusedBefore, string fallbackError)
             {
                 return outcome.IsCancelled
                     ? CleanupResult.CancelledResult(deleted, trimmed, newSincePreview, changedSincePreview, manifestPath)
@@ -145,7 +146,8 @@ namespace IwoBridge.App.Cleanup
                         newSincePreview,
                         changedSincePreview,
                         manifestPath,
-                        outcome.Exception);
+                        outcome.Exception,
+                        refusedBefore + outcome.RefusedCount);
             }
 
             progress?.Report(new CleanupProgress(CleanupStage.Deleting, 0, total));
@@ -153,9 +155,11 @@ namespace IwoBridge.App.Cleanup
                 .DeleteAllAsync(
                     whole.Both, _deleter, mode, snapshotIsAuthoritative: true, DeletionProgress(progress, 0, total), cancellationToken)
                 .ConfigureAwait(false);
-            if (!deletion.IsSuccess)
+
+            // Отказ сервера по отдельным событиям не отменяет обрезку серий: список пройден, остальное удаляется дальше.
+            if (!deletion.ReachedEnd)
             {
-                return Stopped(deletion, deletion.RemovedCount, 0, "Ошибка удаления.");
+                return Stopped(deletion, deletion.RemovedCount, 0, 0, "Ошибка удаления.");
             }
 
             BatchDeleteOutcome trimming = await _executor
@@ -167,9 +171,23 @@ namespace IwoBridge.App.Cleanup
                     DeletionProgress(progress, deletion.RemovedCount, total),
                     cancellationToken)
                 .ConfigureAwait(false);
-            if (!trimming.IsSuccess)
+            if (!trimming.ReachedEnd)
             {
-                return Stopped(trimming, deletion.RemovedCount, trimming.RemovedCount, "Ошибка обрезки серий.");
+                return Stopped(trimming, deletion.RemovedCount, trimming.RemovedCount, deletion.RefusedCount, "Ошибка обрезки серий.");
+            }
+
+            int refused = deletion.RefusedCount + trimming.RefusedCount;
+            if (refused > 0)
+            {
+                string reasons = string.Join(" ", new[] { deletion.Error, trimming.Error }.Where(e => !string.IsNullOrEmpty(e)));
+                return CleanupResult.WithRefusals(
+                    reasons + " Запустите очистку снова, чтобы повторить для них.",
+                    deletion.RemovedCount,
+                    trimming.RemovedCount,
+                    refused,
+                    newSincePreview,
+                    changedSincePreview,
+                    manifestPath);
             }
 
             return CleanupResult.Success(
