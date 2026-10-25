@@ -74,7 +74,9 @@ namespace IwoBridge.Wpf.Tests
                         DataGrid grid = Visuals.All<DataGrid>(window).Single(g => g.IsVisible);
                         // Даже в минимальном окне: заголовок колонок и не меньше трёх строк по 28 единиц.
                         Assert.True(grid.ActualHeight >= 120, $"таблица {grid.ActualHeight}");
-                        if (height >= 1000)
+                        // По фактической высоте: на экране 1024×768 (сборочные машины GitHub) Windows не даёт окну
+                        // стать выше экрана, и «большое» окно там на деле обычное.
+                        if (window.ActualHeight >= 1000)
                         {
                             Assert.True(grid.ActualHeight >= 160, $"в большом окне таблица мала: {grid.ActualHeight}");
                         }
@@ -86,7 +88,9 @@ namespace IwoBridge.Wpf.Tests
                             Assert.True(box.ExtentWidth <= box.ViewportWidth + 0.5, $"дата обрезана: «{box.Text}»");
                         }
 
-                        if (height >= 1000)
+                        // По фактической высоте: на экране 1024×768 (сборочные машины GitHub) Windows не даёт окну
+                        // стать выше экрана, и «большое» окно там на деле обычное.
+                        if (window.ActualHeight >= 1000)
                         {
                             string parts = string.Join(", ", ((Panel)content).Children.OfType<FrameworkElement>().Select(c => c.ActualHeight.ToString("0")));
                             Assert.True(page.ScrollableHeight == 0, $"страница прокручивается на {page.ScrollableHeight:0} при видимой высоте {page.ViewportHeight:0}; части: {parts}");
@@ -115,7 +119,8 @@ namespace IwoBridge.Wpf.Tests
                 var window = new MainWindow(vm, dialogs);
                 try
                 {
-                    Visuals.ShowOffscreen(window, 1120, 780);
+                    // Наибольшее окно на экране 1024×768 — одинаково на любой машине, включая сборочные.
+                    Visuals.ShowOffscreen(window, 1036, 780);
                     await vm.Cleanup.PreviewCommand.ExecuteAsync();
                     await Visuals.Settle(window);
 

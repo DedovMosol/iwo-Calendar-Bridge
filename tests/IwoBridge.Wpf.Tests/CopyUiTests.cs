@@ -63,7 +63,9 @@ namespace IwoBridge.Wpf.Tests
                             Assert.True(box.ExtentWidth <= box.ViewportWidth + 0.5, $"дата обрезана: «{box.Text}»");
                         }
 
-                        if (height >= 1000)
+                        // По фактической высоте: на экране 1024×768 (сборочные машины GitHub) Windows не даёт окну
+                        // стать выше экрана, и «большое» окно там на деле обычное.
+                        if (window.ActualHeight >= 1000)
                         {
                             Assert.True(grid.ActualHeight >= 160, $"в большом окне таблица мала: {grid.ActualHeight}");
                             string parts = string.Join(", ", content.Children.OfType<FrameworkElement>().Select(c => c.ActualHeight.ToString("0")));
@@ -94,7 +96,8 @@ namespace IwoBridge.Wpf.Tests
                     var window = new MainWindow(vm, dialogs);
                     try
                     {
-                        Visuals.ShowOffscreen(window, 1120, 780);
+                        // Наибольшее окно на экране 1024×768 — одинаково на любой машине, включая сборочные.
+                        Visuals.ShowOffscreen(window, 1036, 780);
                         await Visuals.Settle(window);
 
                         // Список Outlook прочитан сразу при запуске, выбран первый календарь.
