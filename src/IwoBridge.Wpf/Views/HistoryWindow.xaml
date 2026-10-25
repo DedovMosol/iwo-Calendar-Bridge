@@ -60,7 +60,7 @@
                    Text="Операций пока не было. Здесь появится каждое копирование и каждая очистка — с числами и итогом." />
 
         <TextBlock Grid.Row="2" Style="{StaticResource SectionText}" Margin="0,12,0,6" Text="Подробности" />
-        <TextBox Grid.Row="3" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" FontFamily="Consolas"
+        <TextBox Grid.Row="3" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
                  VerticalContentAlignment="Top"
                  Text="{Binding Selected.Details, Mode=OneWay}" AutomationProperties.Name="Подробности выбранной операции"
                  AutomationProperties.AutomationId="HistoryDetails" />

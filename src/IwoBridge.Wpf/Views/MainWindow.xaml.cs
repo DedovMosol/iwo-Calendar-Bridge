@@ -15,7 +15,9 @@ namespace IwoBridge.Wpf.Views
     /// </summary>
     public partial class MainWindow : Window
     {
+        private const double ConsoleMinHeight = 64;
         private readonly IDialogService _dialogs;
+        private GridLength _consoleHeight = new GridLength(130);
         private bool _closeAfterStop;
         private bool _exitRequested;
         private bool _silentExit;
@@ -51,9 +53,44 @@ namespace IwoBridge.Wpf.Views
             DataContext = viewModel ?? throw new ArgumentNullException(nameof(viewModel));
             _dialogs = dialogs ?? throw new ArgumentNullException(nameof(dialogs));
             Loaded += (_, __) => viewModel.Start();
+            viewModel.Console.PropertyChanged += OnConsoleChanged;
+            Closed += (_, __) => viewModel.Console.PropertyChanged -= OnConsoleChanged;
+            ApplyConsoleState();
         }
 
         private MainViewModel ViewModel => (MainViewModel)DataContext;
+
+        private void OnConsoleChanged(object? sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(ConsoleViewModel.IsExpanded))
+            {
+                ApplyConsoleState();
+            }
+        }
+
+        /// <summary>
+        /// Консоль развёрнута — строка сетки высотой, которую человек выставил разделителем; свёрнута — по содержимому
+        /// (только заголовок), разделитель скрыт. Высота развёрнутой консоли запоминается до выхода из программы.
+        /// </summary>
+        private void ApplyConsoleState()
+        {
+            if (ViewModel.Console.IsExpanded)
+            {
+                ConsoleRow.Height = _consoleHeight;
+                ConsoleRow.MinHeight = ConsoleMinHeight;
+                ConsoleSplitter.Visibility = Visibility.Visible;
+                return;
+            }
+
+            if (ConsoleRow.Height.IsAbsolute)
+            {
+                _consoleHeight = ConsoleRow.Height;
+            }
+
+            ConsoleRow.MinHeight = 0;
+            ConsoleRow.Height = GridLength.Auto;
+            ConsoleSplitter.Visibility = Visibility.Collapsed;
+        }
 
         protected override void OnClosing(CancelEventArgs e)
         {

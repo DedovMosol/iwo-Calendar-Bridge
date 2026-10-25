@@ -29,6 +29,9 @@ namespace IwoBridge.Wpf.Services
         /// </summary>
         void ShowHistory(System.Func<HistoryViewModel> create);
 
+        /// <summary>Окно «Учётные записи» (модальное): список подключений, добавить, изменить, забыть пароль, удалить.</summary>
+        void ShowAccounts(AccountsViewModel accounts);
+
         /// <summary>
         /// Открыто модальное окно (вопрос, «Подключение», подтверждение удаления): человек решает — автоматические
         /// операции ждут, иначе они изменили бы календарь под открытым вопросом.

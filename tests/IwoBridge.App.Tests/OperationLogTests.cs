@@ -159,6 +159,8 @@ namespace IwoBridge.App.Tests
             Assert.Contains("Копирование начато", text);
             Assert.Contains("Копирование  Outlook: Календарь - box -> box@example.test на mail.example.test", text);
             Assert.Contains("создано 4, перезаписано 2, удалено 1, ошибок 3", text);
+            Assert.Contains("удалено 2 441", OperationRecordText.Plain(OperationRecordText.Line(new OperationRecord(
+                OperationKind.Cleanup, DateTime.UtcNow, DateTime.UtcNow, OperationOutcome.Success, null, "box", "", 0, 0, 2441, 0, "Готово"))));
             Assert.Contains("- есть проблемы (12 с)", text);
             Assert.Contains("    Событие \"Планёрка\" - сервер отклонил", text);
             Assert.DoesNotContain("→", text);

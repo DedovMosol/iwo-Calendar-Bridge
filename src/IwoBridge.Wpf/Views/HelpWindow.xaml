@@ -14,12 +14,12 @@
             <Setter Property="LineHeight" Value="21" />
         </Style>
         <Style x:Key="H1" TargetType="Paragraph">
-            <Setter Property="FontSize" Value="22" />
+            <Setter Property="FontSize" Value="23" />
             <Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="Margin" Value="0,0,0,12" />
         </Style>
         <Style x:Key="H2" TargetType="Paragraph">
-            <Setter Property="FontSize" Value="17" />
+            <Setter Property="FontSize" Value="18" />
             <Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
             <Setter Property="Margin" Value="0,18,0,8" />
@@ -48,7 +48,7 @@
 
     <FlowDocumentReader ViewingMode="Scroll" IsPageViewEnabled="False" IsTwoPageViewEnabled="False"
                         AutomationProperties.Name="Справка" AutomationProperties.AutomationId="HelpDocument">
-        <FlowDocument FontFamily="Segoe UI" FontSize="14" PagePadding="32,24" ColumnWidth="99999" TextAlignment="Left"
+        <FlowDocument FontFamily="Times New Roman" FontSize="15" PagePadding="32,24" ColumnWidth="99999" TextAlignment="Left"
                       Background="{DynamicResource SurfaceBrush}" Foreground="{DynamicResource TextBrush}">
 
             <Paragraph Style="{StaticResource H1}">Как пользоваться программой</Paragraph>
@@ -71,9 +71,10 @@
                 <ListItem><Paragraph>Адрес сервера Exchange, ваш логин и пароль — для календаря, куда копировать. Их знает администратор.</Paragraph></ListItem>
             </List>
 
-            <Paragraph Style="{StaticResource H2}">Шаг 1. Куда копировать — кнопка «Приёмник…»</Paragraph>
+            <Paragraph Style="{StaticResource H2}">Шаг 1. Куда копировать — приёмник</Paragraph>
             <Paragraph>
-                При первом запуске это окно откроется само. Впишите адрес сервера, логин (например, <Run FontFamily="Consolas">DOMAIN&#x2060;\&#x2060;ivanov</Run>)
+                При первом запуске окно «Подключение» откроется само. Позже его открывает ссылка «изменить…» рядом со
+                строкой «Куда» или кнопка <Bold>«Учётные записи…»</Bold> вверху окна. Впишите адрес сервера, логин (например, <Run>DOMAIN&#x2060;\&#x2060;ivanov</Run>)
                 и пароль, выберите часовой пояс своего календаря и нажмите <Bold>«Сохранить»</Bold>. Программа проверит
                 подключение. С отметкой <Bold>«Запомнить»</Bold> пароль хранится в защищённом хранилище Windows, а не в
                 файлах программы. Без неё программа спросит пароль при следующем запуске.
@@ -96,8 +97,8 @@
                     нажмите «Обновить».
                 </Paragraph></ListItem>
                 <ListItem><Paragraph>
-                    Календарь лежит на другом сервере, а в Outlook его нет? Нажмите вверху <Bold>«Источник (EWS)…»</Bold>,
-                    заполните подключение так же, как в шаге 1, и выберите «Сервер по EWS».
+                    Календарь лежит на другом сервере, а в Outlook его нет? Нажмите ссылку «настроить…» в строке
+                    <Bold>«Сервер по EWS»</Bold>, заполните подключение так же, как в шаге 1, и выберите «Сервер по EWS».
                 </Paragraph></ListItem>
             </List>
             <Paragraph>
@@ -155,7 +156,7 @@
                 </Paragraph></ListItem>
                 <ListItem><Paragraph>
                     Неверный пароль или нет прав — автокопирование <Bold>приостанавливается</Bold>, чтобы повторные входы
-                    не заблокировали учётную запись. Исправьте подключение кнопкой «Приёмник…» — копирование продолжится само.
+                    не заблокировали учётную запись. Исправьте подключение в «Учётных записях» — копирование продолжится само.
                 </Paragraph></ListItem>
                 <ListItem><Paragraph>
                     Пока открыт любой вопрос программы или идёт очистка, автокопирование ждёт и начнётся через минуту.
@@ -181,13 +182,24 @@
             <Paragraph Style="{StaticResource H2}">Очистка календаря</Paragraph>
             <Paragraph>
                 Вкладка <Bold>«Очистка»</Bold> — чтобы удалить много событий сразу (например, дубли, оставленные другими
-                программами). Выберите ящик и период (другой ящик подключается кнопкой «Добавить почту…» рядом со
+                программами). Выберите ящик и период (другой ящик добавляется в «Учётных записях» — ссылка рядом со
                 списком), нажмите «Показать, что будет удалено», проверьте два списка —
                 «Будет удалено» и «Останется», затем «Удалить…» и введите адрес ящика для подтверждения. По умолчанию
                 удалённое попадает в папку «Удалённые» и его можно вернуть. Список удалённого сохраняется в файл.
-                Пароль или адрес добавленного ящика меняет кнопка «Изменить…», «Убрать из списка» убирает ящик из
-                программы (его календарь не меняется).
             </Paragraph>
+
+            <Paragraph Style="{StaticResource H2}">Учётные записи</Paragraph>
+            <Paragraph>
+                Кнопка <Bold>«Учётные записи…»</Bold> вверху окна показывает все подключения одним списком: приёмник,
+                источник по EWS и почту, добавленную для очистки. В строке — ящик, сервер, учётная запись и где хранится
+                пароль. Календари ящиков при этом не меняются.
+            </Paragraph>
+            <List MarkerStyle="Disc">
+                <ListItem><Paragraph><Bold>«Изменить…»</Bold> (или двойной щелчок по строке) — другой адрес, пароль, часовой пояс.</Paragraph></ListItem>
+                <ListItem><Paragraph><Bold>«Забыть пароль»</Bold> — пароль удаляется из Windows. До закрытия программы подключение работает, при следующем запуске программа спросит пароль.</Paragraph></ListItem>
+                <ListItem><Paragraph><Bold>«Удалить…»</Bold> (или клавиша Delete) — настройки подключения и пароль удаляются из программы.</Paragraph></ListItem>
+                <ListItem><Paragraph><Bold>«Добавить почту…»</Bold> — ещё один ящик для очистки.</Paragraph></ListItem>
+            </List>
 
             <Paragraph Style="{StaticResource H2}">История — что и когда сделано</Paragraph>
             <Paragraph>
@@ -195,11 +207,14 @@
                 расписанию, и каждая очистка. Видно, когда, откуда и куда, за какой период, сколько событий создано,
                 перезаписано и удалено, сколько не удалось, чем закончилось и сколько длилось. Строка с проблемой
                 выделена цветом. Подробности выбранной строки показаны внизу окна, их можно выделить и скопировать.
-                Журнал хранится в файле <Run FontFamily="Consolas">logs\history.jsonl</Run> в папке программы.
+                Журнал хранится в файле <Run>logs\history.jsonl</Run> в папке программы.
             </Paragraph>
             <Paragraph>
-                Если запустить программу из командной строки (cmd или PowerShell), начало и итог каждой операции появятся
-                и там. Сохранить их в файл: <Run FontFamily="Consolas">IwoCalendarBridge.exe &gt; run.log</Run>.
+                <Bold>Консоль</Bold> внизу окна показывает ход работы: запуск, предпросмотр, начало и итог каждой
+                операции, подробности сбоев, состояние Outlook, изменения учётных записей. Готовое — зелёным, проблемы —
+                красным. Высоту консоли меняет разделитель над ней, «Свернуть» оставляет одну строку заголовка, текст
+                можно выделить и скопировать. Если запустить программу из командной строки (cmd или PowerShell), те же
+                строки появятся и там. Сохранить их в файл: <Run>IwoCalendarBridge.exe &gt; run.log</Run>.
             </Paragraph>
 
             <Paragraph Style="{StaticResource H2}">Если что-то не получилось</Paragraph>
@@ -223,7 +238,7 @@
                     </TableRow>
                     <TableRow>
                         <TableCell Padding="8,6"><Paragraph Margin="0">«Неверный логин или пароль»</Paragraph></TableCell>
-                        <TableCell Padding="8,6"><Paragraph Margin="0">Проверьте раскладку и Caps Lock, затем «Приёмник…» → введите пароль заново. Программа не повторяет вход сама, чтобы не заблокировать учётную запись.</Paragraph></TableCell>
+                        <TableCell Padding="8,6"><Paragraph Margin="0">Проверьте раскладку и Caps Lock, затем «Учётные записи…» → «Изменить…» → введите пароль заново. Программа не повторяет вход сама, чтобы не заблокировать учётную запись.</Paragraph></TableCell>
                     </TableRow>
                     <TableRow>
                         <TableCell Padding="8,6"><Paragraph Margin="0">«Сервер недоступен»</Paragraph></TableCell>
@@ -245,7 +260,7 @@
             </Table>
             <Paragraph>
                 Подробности ошибки для администратора — под ссылкой «Подробности для администратора» в самом сообщении.
-                Непредвиденные сбои записываются в файл <Run FontFamily="Consolas">logs\crash.log</Run> в папке программы.
+                Непредвиденные сбои записываются в файл <Run>logs\crash.log</Run> в папке программы.
             </Paragraph>
 
             <Paragraph Style="{StaticResource H2}">Клавиши</Paragraph>

@@ -140,6 +140,10 @@ namespace IwoBridge.Wpf.Tests
 
         public void ShowHistory(Func<HistoryViewModel> create) => HistoryShown = create();
 
+        public AccountsViewModel? AccountsShown { get; private set; }
+
+        public void ShowAccounts(AccountsViewModel accounts) => AccountsShown = accounts;
+
         public bool Show(ConnectionViewModel connection)
         {
             ConnectionShown++;

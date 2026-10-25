@@ -1,0 +1,49 @@
+<UserControl x:Class="IwoBridge.Wpf.Views.ConsolePanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- Панель «Консоль» внизу главного окна (модель — ConsoleViewModel): те же строки, что программа пишет в консоль
+         Windows. Тёмный фон, как у консоли; итог без проблем — зелёным, проблема — красным, подробности — серым.
+         Текст выделяется и копируется (Ctrl+C), «Копировать всё» — весь текст панели. Высоту меняет разделитель над
+         панелью, «Свернуть» оставляет одну строку заголовка. -->
+    <DockPanel>
+        <Border DockPanel.Dock="Top" Background="{DynamicResource HeaderBrush}" BorderBrush="{DynamicResource LineBrush}"
+                BorderThickness="0,1,0,1" Padding="20,1">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="Консоль" FontWeight="SemiBold" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="1" Margin="12,0,12,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                           Foreground="{DynamicResource MutedTextBrush}"
+                           Text="начало и итог операций, предпросмотр, Outlook, учётные записи" />
+                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Style="{StaticResource LinkButton}" Content="Копировать всё" Click="OnCopyAll"
+                            IsEnabled="{Binding HasLines}" AutomationProperties.AutomationId="ConsoleCopyAll"
+                            ToolTip="Скопировать весь текст консоли в буфер обмена" />
+                    <Button Style="{StaticResource LinkButton}" Margin="14,0,0,0" Content="Очистить" Command="{Binding ClearCommand}"
+                            AutomationProperties.AutomationId="ConsoleClear"
+                            ToolTip="Очистить панель. Журнал «История» и консоль Windows не меняются." />
+                    <Button Style="{StaticResource LinkButton}" Margin="14,0,0,0" Content="{Binding ToggleText}" Command="{Binding ToggleCommand}"
+                            AutomationProperties.AutomationId="ConsoleToggle"
+                            ToolTip="Свернуть консоль до строки заголовка или развернуть обратно" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <Grid Background="{DynamicResource ConsoleBackBrush}"
+              Visibility="{Binding IsExpanded, Converter={StaticResource VisibleWhen}}">
+            <RichTextBox x:Name="Output" IsReadOnly="True" IsReadOnlyCaretVisible="False" BorderThickness="0" Padding="16,6"
+                         Background="{DynamicResource ConsoleBackBrush}" Foreground="{DynamicResource ConsoleTextBrush}"
+                         VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                         AutomationProperties.Name="Консоль" AutomationProperties.AutomationId="ConsoleOutput">
+                <FlowDocument PagePadding="0" />
+            </RichTextBox>
+            <TextBlock Margin="22,8,22,0" IsHitTestVisible="False" TextWrapping="Wrap"
+                       Foreground="{DynamicResource ConsoleMutedBrush}"
+                       Visibility="{Binding HasLines, Converter={StaticResource VisibleWhen}, ConverterParameter=invert}"
+                       Text="Здесь появятся начало и итог каждой операции." />
+        </Grid>
+    </DockPanel>
+</UserControl>

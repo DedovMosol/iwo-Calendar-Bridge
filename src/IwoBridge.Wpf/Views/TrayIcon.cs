@@ -24,6 +24,7 @@ namespace IwoBridge.Wpf.Views
         private readonly Action _exit;
         private readonly Forms.NotifyIcon _icon;
         private readonly Forms.ContextMenuStrip _menu;
+        private readonly System.Drawing.Font _menuFont;
         private readonly System.Drawing.Icon _image;
         private bool _hintShown;
 
@@ -38,7 +39,9 @@ namespace IwoBridge.Wpf.Views
                 _image = new System.Drawing.Icon(stream, Forms.SystemInformation.SmallIconSize);
             }
 
-            _menu = new Forms.ContextMenuStrip();
+            // Шрифт меню — как у окон программы (Times New Roman). Меню чужой шрифт не освобождает — это делает Dispose.
+            _menuFont = new System.Drawing.Font("Times New Roman", 11f);
+            _menu = new Forms.ContextMenuStrip { Font = _menuFont };
             _menu.Items.Add("Открыть", null, (_, __) => _show());
             _menu.Items.Add("Скопировать сейчас", null, (_, __) => RunNow());
             _menu.Items.Add("Справка", null, (_, __) => _model.HelpCommand.Execute(null));
@@ -102,6 +105,7 @@ namespace IwoBridge.Wpf.Views
             _icon.Visible = false;
             _icon.Dispose();
             _menu.Dispose();
+            _menuFont.Dispose();
             _image.Dispose();
         }
 

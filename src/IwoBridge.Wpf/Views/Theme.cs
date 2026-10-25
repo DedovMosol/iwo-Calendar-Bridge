@@ -55,6 +55,11 @@ namespace IwoBridge.Wpf.Views
                 ["WarningLineBrush"] = () => SystemColors.WindowTextBrush,
                 ["GridLineBrush"] = () => SystemColors.WindowTextBrush,
                 ["RowAltBrush"] = () => SystemColors.WindowBrush,
+                ["ConsoleBackBrush"] = () => SystemColors.WindowBrush,
+                ["ConsoleTextBrush"] = () => SystemColors.WindowTextBrush,
+                ["ConsoleSuccessBrush"] = () => SystemColors.WindowTextBrush,
+                ["ConsoleProblemBrush"] = () => SystemColors.WindowTextBrush,
+                ["ConsoleMutedBrush"] = () => SystemColors.WindowTextBrush,
             };
 
         /// <summary>

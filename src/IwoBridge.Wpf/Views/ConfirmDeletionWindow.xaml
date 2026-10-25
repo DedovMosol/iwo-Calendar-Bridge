@@ -56,7 +56,7 @@
                             Visibility="{Binding PhraseMatches, Converter={StaticResource VisibleWhen}}">
                     <Path Width="12" Height="12" Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,6,0"
                           Stroke="{DynamicResource SuccessTextBrush}" StrokeThickness="2" Data="M1,6 L4.5,9.5 L11,2" />
-                    <TextBlock Foreground="{DynamicResource SuccessTextBrush}" FontSize="13" Text="Адрес совпадает" />
+                    <TextBlock Foreground="{DynamicResource SuccessTextBrush}" FontSize="14" Text="Адрес совпадает" />
                 </StackPanel>
 
                 <CheckBox Margin="0,12,0,0" IsChecked="{Binding UnderstoodIrreversible}"

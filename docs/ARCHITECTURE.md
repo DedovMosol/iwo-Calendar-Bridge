@@ -249,10 +249,21 @@ Exe `IwoCalendarBridge`, .NET Framework 4.8, Windows 7 SP1+, x86 и x64. Кор�
 
 | Слой | Типы | Назначение |
 |---|---|---|
-| Модели представления | `MainViewModel`, `CopyViewModel`, `AutoCopyViewModel`, `CleanupViewModel`, `ConnectionViewModel`, `DeletionConfirmationViewModel`, `HistoryViewModel` | Вкладки, подключения, копирование, расписание, очистка, подтверждения, история операций |
+| Модели представления | `MainViewModel`, `CopyViewModel`, `AutoCopyViewModel`, `CleanupViewModel`, `ConnectionViewModel`, `AccountsViewModel`, `DeletionConfirmationViewModel`, `HistoryViewModel`, `ConsoleViewModel` | Вкладки, подключения, учётные записи, копирование, расписание, очистка, подтверждения, история операций, консоль |
 | Службы | `ITargetSession`, `ITargetConnector`, `ISettingsStore`, `IMailboxStores`, `ICopySettingsStore`, `IOutlookCalendars`, `IOneShotTimer`, `IAutostart`, `IDialogService`, `ConsoleOutput` | Сеть, файлы, Outlook, таймер, реестр, окна и консоль за портами |
-| Окна | `MainWindow`, `CopyPage`, `ConnectionWindow`, `ConfirmDeletionWindow`, `QuestionWindow`, `HelpWindow`, `HistoryWindow`, `TrayIcon` | Разметка, в коде окон только то, что требует WPF |
+| Окна | `MainWindow`, `CopyPage`, `ConsolePanel`, `ConnectionWindow`, `AccountsWindow`, `ConfirmDeletionWindow`, `QuestionWindow`, `HelpWindow`, `HistoryWindow`, `TrayIcon` | Разметка, в коде окон только то, что требует WPF |
 | Вид | `FillPanel`, `WindowSizing`, `Theme`, `Announce` | Адаптивная страница, окна в пределах экрана, высокая контрастность, озвучивание |
+
+Учётными записями владеет `MainViewModel`: у него сеансы приёмника, источника и добавленной почты, и после
+изменения он же переключает копирование и список очистки. Окно «Учётные записи» обращается к нему через
+внутренний порт `IAccountManager` (список строк, добавить, изменить, забыть пароль, удалить). «Забыть пароль»
+сначала пишет имя учётной записи в профиль, затем удаляет пароль из Credential Manager. Сеанс работает до
+выхода, следующий запуск спросит пароль. Удаление приёмника или источника отключает его в копировании и
+очистке и освобождает сеанс.
+
+Шрифт всех окон задаёт стиль `AppWindow` (Times New Roman). Кегль, жирность и цвет заголовка вкладки операции
+заданы на его `ContentPresenter`, а не на `TabItem`: содержимое вкладки — логический потомок `TabItem` и
+унаследовало бы их.
 | Тексты | `ErrorMessages`, `UserMessage`, `RussianText` | «Что случилось, что делать, подробности» для каждого вида ошибки, числа, даты, склонения |
 
 ## 10. Журнал операций
@@ -263,16 +274,19 @@ flowchart LR
   OH --> LOG(["IOperationLog"])
   LOG -->|хранение| JL["JsonLinesOperationLog — logs/history.jsonl"]
   LOG -.->|запуск из консоли| MIR["MirroredOperationLog"]
-  MIR --> CON["ConsoleOutput — консоль или файл перенаправления"]
+  LOG -->|всегда| PANE["MirroredOperationLog → ConsoleViewModel · ConsolePanel — консоль внизу окна"]
+  MIR --> CON["ConsoleOutput — консоль Windows или файл перенаправления"]
   JL -->|Recorded, Recent| HW["HistoryViewModel · HistoryWindow"]
 ```
 
 | Тип | Назначение |
 |---|---|
 | `OperationRecord` | Законченная операция: вид (копирование, автокопирование, очистка), начало и конец в UTC, итог (готово, есть проблемы, остановлено), откуда и куда, период, счётчики, заголовок итога и до 50 строк подробностей |
-| `IOperationLog` | Порт журнала: `Record`, `Info` (ход работы, только для консоли), `Recent`, событие `Recorded` |
+| `IOperationLog` | Порт журнала: `Record`, `Info` (ход работы, только для консоли, с признаком проблемы), `Recent`, событие `Recorded` |
+| `OperationLine`, `OperationRecordText.Lines` | Строки консоли с видом (ход работы, готово, проблема, остановлено, подробность) — один формат для окна и консоли Windows |
+| `ConsoleViewModel`, `ConsolePanel` | Панель внизу главного окна: строки из любого потока — в поток окна, последние 1000 строк, цвет по виду строки, сворачивание, «Копировать всё» |
 | `JsonLinesOperationLog` | Файл JSON Lines: UTF-8 без BOM, время ISO 8601 в UTC, версия схемы в поле `v`. Строка дописывается в конец файла, повреждённая строка при чтении пропускается. Файл больше 1 МБ переносится в `history.1.jsonl` |
-| `MirroredOperationLog` | Декоратор: каждая запись и каждое сообщение о ходе работы строкой в консоль, типографские знаки заменены на ASCII |
+| `MirroredOperationLog` | Декоратор: каждая запись и каждое сообщение о ходе работы строками в получатель — панель окна или `TextWriter` консоли Windows (там типографские знаки заменены на ASCII) |
 | `MemoryOperationLog` | Журнал в памяти для демонстрационного режима и тестов |
 | `ConsoleOutput` | Вывод перенаправлен в файл — UTF-8. В канал — кодовая страница консоли, которой канал читают. В `nul` — вывода нет. Консоль запустившего процесса — `WriteConsoleW`, программа подключается к ней только на время строки, Ctrl+C и Ctrl+Break поглощает. Строки пишет фоновый поток из очереди на 1000 строк: остановленная консоль или непрочитанный канал не задерживают поток окон |
 | `OperationHistory`, `HistoryViewModel`, `HistoryWindow` | Запись итога вкладок тем же текстом, что на экране, и немодальное окно «История» (Ctrl+H): последние 1000 операций, новые сверху, итог за 7 дней, подробности выбранной строки |

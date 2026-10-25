@@ -63,7 +63,7 @@ namespace IwoBridge.Wpf.Tests
                             Assert.True(box.ExtentWidth <= box.ViewportWidth + 0.5, $"дата обрезана: «{box.Text}»");
                         }
 
-                        if (height >= 780)
+                        if (height >= 1000)
                         {
                             Assert.True(grid.ActualHeight >= 160, $"в большом окне таблица мала: {grid.ActualHeight}");
                             string parts = string.Join(", ", content.Children.OfType<FrameworkElement>().Select(c => c.ActualHeight.ToString("0")));
@@ -90,6 +90,7 @@ namespace IwoBridge.Wpf.Tests
                     var dialogs = new FakeDialogs { AskAnswer = true };
                     var session = new DemoSession(DateTime.Today, TimeSpan.FromHours(3));
                     var vm = new MainViewModel(session, dialogs, new DemoSources());
+                    vm.Console.IsExpanded = false; // консоль свёрнута — место только у страницы
                     var window = new MainWindow(vm, dialogs);
                     try
                     {
@@ -108,7 +109,8 @@ namespace IwoBridge.Wpf.Tests
                         Assert.False(vm.Cleanup.HasPreview);
 
                         var page = Visuals.All<ScrollViewer>(window).Single(s => s.Name == "CopyScroll");
-                        Assert.True(page.ScrollableHeight == 0, $"прокрутка {page.ScrollableHeight:0}, видимая {page.ViewportHeight:0}, содержимое {page.ExtentHeight:0}");
+                        double console = ((RowDefinition)window.FindName("ConsoleRow")).ActualHeight;
+                        Assert.True(page.ScrollableHeight == 0, $"прокрутка {page.ScrollableHeight:0}, видимая {page.ViewportHeight:0}, содержимое {page.ExtentHeight:0}, консоль {console:0}");
                         AssertUniqueAccessKeys(window);
 
                         // Флажок первой строки снимается щелчком по самому флажку в таблице.
@@ -218,11 +220,13 @@ namespace IwoBridge.Wpf.Tests
                     Assert.Equal(MainOperation.Copy, vm.Operation);
                     Assert.Equal(0, Visuals.All<TabControl>(window).Single(t => ReferenceEquals(t.DataContext, vm)).SelectedIndex);
                     Assert.False(vm.EditConnectionCommand.CanExecute(null));
+                    Assert.False(vm.AccountsCommand.CanExecute(null));
                     Assert.True(vm.StopCommand.CanExecute(null));
                     vm.StopCommand.Execute(null);
                     await preview;
                     Assert.False(vm.IsBusy);
                     Assert.True(vm.EditConnectionCommand.CanExecute(null));
+                    Assert.True(vm.AccountsCommand.CanExecute(null));
                 }
                 finally
                 {

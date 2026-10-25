@@ -82,14 +82,14 @@ namespace IwoBridge.Wpf.Tests
             var target = new MemorySettings { Profile = Profile(), Credentials = new CredentialSecret("DOMAIN\\user", "secret") };
             var vm = new MainViewModel(target, new FakeConnector(), dialogs, dialogs, () => TimeSpan.Zero, mailboxes: mailboxes);
             vm.Start();
-            Assert.False(vm.CanRemoveMailbox);
+            Assert.False(vm.CleanupChoice!.IsAdded);
 
             dialogs.OnConnection = Fill("other@example.test", true);
-            vm.AddMailboxCommand.Execute(null);
+            Accounts(vm, dialogs).AddCommand.Execute(null);
 
             Assert.Equal(2, vm.CleanupChoices.Count);
             Assert.StartsWith("Почта: other@example.test", vm.CleanupChoice!.Label, StringComparison.Ordinal);
-            Assert.True(vm.CanRemoveMailbox);
+            Assert.True(vm.CleanupChoice!.IsAdded);
             Assert.Single(mailboxes.Saved());
 
             var restarted = new MainViewModel(target, new FakeConnector(), dialogs, dialogs, () => TimeSpan.Zero, mailboxes: mailboxes);
@@ -107,7 +107,7 @@ namespace IwoBridge.Wpf.Tests
             vm.Start();
 
             dialogs.OnConnection = Fill("other@example.test", false);
-            vm.AddMailboxCommand.Execute(null);
+            Accounts(vm, dialogs).AddCommand.Execute(null);
 
             Assert.Equal(2, vm.CleanupChoices.Count);
             Assert.Empty(mailboxes.Saved());
@@ -123,10 +123,10 @@ namespace IwoBridge.Wpf.Tests
             vm.Start();
 
             dialogs.OnConnection = Fill("box@example.test", true);
-            vm.AddMailboxCommand.Execute(null);
+            Accounts(vm, dialogs).AddCommand.Execute(null);
 
             Assert.Single(vm.CleanupChoices);
-            Assert.False(vm.CanRemoveMailbox);
+            Assert.False(vm.CleanupChoice!.IsAdded);
             Assert.Empty(mailboxes.Saved());
         }
 
@@ -139,16 +139,26 @@ namespace IwoBridge.Wpf.Tests
             var vm = new MainViewModel(target, new FakeConnector(), dialogs, dialogs, () => TimeSpan.Zero, mailboxes: mailboxes);
             vm.Start();
             dialogs.OnConnection = Fill("other@example.test", true);
-            vm.AddMailboxCommand.Execute(null);
+            Accounts(vm, dialogs).AddCommand.Execute(null);
             var added = (TestSession)vm.CleanupChoices.Last().Session!;
+            AccountsViewModel accounts = Accounts(vm, dialogs);
+            accounts.Selected = accounts.Rows.Single(r => r.Role == AccountRole.Mailbox);
 
             dialogs.AskAnswer = true;
-            vm.RemoveMailboxCommand.Execute(null);
+            accounts.DeleteCommand.Execute(null);
 
             Assert.Single(vm.CleanupChoices);
             Assert.Empty(mailboxes.Saved());
             Assert.True(added.IsDisposed);
-            Assert.False(vm.CanRemoveMailbox);
+            Assert.False(vm.CleanupChoice!.IsAdded);
+            Assert.DoesNotContain(accounts.Rows, r => r.Role == AccountRole.Mailbox);
+            Assert.Contains("удалена", accounts.Status);
+        }
+
+        private static AccountsViewModel Accounts(MainViewModel vm, FakeDialogs dialogs)
+        {
+            vm.AccountsCommand.Execute(null);
+            return dialogs.AccountsShown!;
         }
 
         [Fact]
@@ -194,7 +204,7 @@ namespace IwoBridge.Wpf.Tests
             var vm = new MainViewModel(target, new FakeConnector(), dialogs, dialogs, () => TimeSpan.Zero, mailboxes: mailboxes);
             vm.Start();
             dialogs.OnConnection = Fill("other@example.test", true);
-            vm.AddMailboxCommand.Execute(null);
+            Accounts(vm, dialogs).AddCommand.Execute(null);
             var first = (TestSession)vm.CleanupChoice!.Session!;
 
             dialogs.OnConnection = Fill("other@example.test", false);

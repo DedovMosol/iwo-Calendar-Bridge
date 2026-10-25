@@ -54,16 +54,16 @@ namespace IwoBridge.Wpf.ViewModels
 
         public string Label { get; }
 
-        /// <summary>Подключение; <c>null</c> — добавленная почта, пароль которой не сохранён (нужно «Изменить…»).</summary>
+        /// <summary>Подключение; <c>null</c> — добавленная почта, пароль которой не сохранён (нужно «Ввести пароль…»).</summary>
         internal ITargetSession? Session { get; }
 
-        /// <summary>Почта, добавленная кнопкой «Добавить почту…»: её можно изменить и убрать из списка.</summary>
+        /// <summary>Почта, добавленная в «Учётных записях»: её можно изменить и удалить там же.</summary>
         internal bool IsAdded { get; }
 
         /// <summary>Где запомнена добавленная почта; <c>null</c> — только до закрытия программы.</summary>
         internal ISettingsStore? Store { get; }
 
-        /// <summary>Настройки добавленной почты — чтобы «Изменить…» открыл окно заполненным.</summary>
+        /// <summary>Настройки добавленной почты — чтобы окно «Подключение» открылось заполненным.</summary>
         internal ConnectionProfile? Profile { get; }
 
         internal string? UserName { get; }
@@ -78,7 +78,7 @@ namespace IwoBridge.Wpf.ViewModels
     /// При запуске читаются сохранённые настройки: нет приёмника — сразу окно «Приёмник»; источник по EWS просто
     /// подключается, если настроен. Сеть при этом не трогается. Во время операции подключения и операция не меняются.
     /// </summary>
-    public sealed class MainViewModel : ObservableObject, IDisposable
+    public sealed partial class MainViewModel : ObservableObject, IDisposable
     {
         private readonly ISettingsStore? _settings;
         private readonly ISettingsStore? _sourceSettings;
@@ -88,7 +88,7 @@ namespace IwoBridge.Wpf.ViewModels
         private readonly IDialogService _dialogs;
         private readonly IConnectionDialog? _connectionDialog;
         private readonly Func<TimeSpan> _localOffset;
-        private string _targetLabel = "Приёмник не настроен";
+        private string _targetLabel = NoTarget;
         private ITargetSession? _session;
         private ITargetSession? _sourceSession;
         private MainOperation _operation = MainOperation.Copy;
@@ -113,10 +113,12 @@ namespace IwoBridge.Wpf.ViewModels
             IOutlookCalendars? outlook = null,
             CopyServices? copyServices = null,
             IMailboxStores? mailboxes = null,
-            IOperationLog? log = null)
+            IOperationLog? log = null,
+            ConsoleViewModel? console = null)
         {
             _mailboxStores = mailboxes;
             _log = log;
+            Console = console ?? new ConsoleViewModel();
             _settings = settings ?? throw new ArgumentNullException(nameof(settings));
             _connector = connector ?? throw new ArgumentNullException(nameof(connector));
             _dialogs = dialogs ?? throw new ArgumentNullException(nameof(dialogs));
@@ -125,29 +127,31 @@ namespace IwoBridge.Wpf.ViewModels
             _sourceSettings = sourceSettings;
             Cleanup = NewCleanup(dialogs);
             Copy = NewCopy(dialogs, outlook, copyServices);
-            EditConnectionCommand = new RelayCommand(EditTarget, () => !IsBusy);
-            EditSourceCommand = new RelayCommand(EditSource, () => !IsBusy && _sourceSettings != null);
-            AddMailboxCommand = new RelayCommand(AddMailbox, () => !IsBusy && _mailboxStores != null);
-            EditMailboxCommand = new RelayCommand(EditMailbox, () => !IsBusy && CanRemoveMailbox);
-            RemoveMailboxCommand = new RelayCommand(RemoveMailbox, () => !IsBusy && CanRemoveMailbox);
+            EditConnectionCommand = new RelayCommand(() => EditTarget(), () => !IsBusy);
+            EditSourceCommand = new RelayCommand(() => EditSource(), () => !IsBusy && _sourceSettings != null);
+            EditMailboxCommand = new RelayCommand(() => EditMailbox(_cleanupChoice), () => !IsBusy && _cleanupChoice?.IsAdded == true);
+            AccountsCommand = new RelayCommand(() => _dialogs.ShowAccounts(new AccountsViewModel(this)), () => !IsBusy);
             (PreviewCommand, StopCommand) = CurrentCommands();
             WatchBusy();
         }
 
         /// <summary>Демонстрационный режим: готовый сеанс (он же приёмник и источник по EWS), без настроек и сети.</summary>
         public MainViewModel(
-            ITargetSession demoSession, IDialogService dialogs, IOutlookCalendars? outlook = null, CopyServices? copyServices = null, IOperationLog? log = null)
+            ITargetSession demoSession, IDialogService dialogs, IOutlookCalendars? outlook = null, CopyServices? copyServices = null,
+            IOperationLog? log = null, ConsoleViewModel? console = null)
         {
             _log = log;
+            Console = console ?? new ConsoleViewModel();
             _dialogs = dialogs ?? throw new ArgumentNullException(nameof(dialogs));
             _localOffset = () => TimeSpan.Zero; // окна «Подключение» в демонстрационном режиме нет
             Cleanup = NewCleanup(dialogs);
             Copy = NewCopy(dialogs, outlook, copyServices);
             EditConnectionCommand = new RelayCommand(() => { }, () => false);
             EditSourceCommand = new RelayCommand(() => { }, () => false);
-            AddMailboxCommand = new RelayCommand(() => { }, () => false);
             EditMailboxCommand = new RelayCommand(() => { }, () => false);
-            RemoveMailboxCommand = new RelayCommand(() => { }, () => false);
+
+            // Список учётных записей виден и в демонстрационном режиме — только для просмотра.
+            AccountsCommand = new RelayCommand(() => _dialogs.ShowAccounts(new AccountsViewModel(this)), () => !IsBusy);
             (PreviewCommand, StopCommand) = CurrentCommands();
             WatchBusy();
             ApplyTarget(demoSession ?? throw new ArgumentNullException(nameof(demoSession)));
@@ -196,26 +200,26 @@ namespace IwoBridge.Wpf.ViewModels
 
         public CopyViewModel Copy { get; }
 
-        /// <summary>Подключение «Приёмник».</summary>
+        /// <summary>Панель «Консоль» внизу окна.</summary>
+        public ConsoleViewModel Console { get; }
+
+        /// <summary>«Учётные записи…»: все подключения в одном окне — добавить, изменить, забыть пароль, удалить.</summary>
+        public RelayCommand AccountsCommand { get; }
+
+        /// <summary>Подключение «Приёмник» (ссылка «изменить…» у строки «Куда»).</summary>
         public RelayCommand EditConnectionCommand { get; }
 
-        /// <summary>Подключение «Источник по EWS».</summary>
+        /// <summary>Подключение «Источник по EWS» (ссылка у строки «Сервер по EWS»).</summary>
         public RelayCommand EditSourceCommand { get; }
 
-        /// <summary>«Добавить почту…»: ещё один ящик в списке очистки.</summary>
-        public RelayCommand AddMailboxCommand { get; }
-
-        /// <summary>«Изменить…»: адрес, учётная запись, пароль, «Запомнить» выбранной добавленной почты.</summary>
+        /// <summary>«Ввести пароль…» выбранной в очистке добавленной почты, пароль которой не сохранён.</summary>
         public RelayCommand EditMailboxCommand { get; }
 
-        /// <summary>«Убрать из списка»: выбранная добавленная почта.</summary>
-        public RelayCommand RemoveMailboxCommand { get; }
+        /// <summary>Подключения можно менять (в демонстрационном режиме — нет): ссылки «изменить…» видны.</summary>
+        public bool CanEditConnections => _settings != null;
 
-        /// <summary>Можно ли добавлять почту (в демонстрационном режиме нельзя).</summary>
-        public bool CanAddMailboxes => _mailboxStores != null;
-
-        /// <summary>Выбрана добавленная почта — её можно изменить и убрать из списка.</summary>
-        public bool CanRemoveMailbox => _cleanupChoice?.IsAdded == true;
+        /// <summary>Подключение «Источник по EWS» есть в программе.</summary>
+        public bool CanEditSource => _sourceSettings != null;
 
         /// <summary>В списке очистки есть хотя бы один ящик (иначе вкладка предлагает настроить подключение).</summary>
         public bool HasCleanupChoices => _cleanupChoices.Count > 0;
@@ -368,16 +372,16 @@ namespace IwoBridge.Wpf.ViewModels
             }
         }
 
-        private void EditTarget()
+        private bool EditTarget()
         {
             string? loadError = LoadSaved(_settings!, out ConnectionProfile? profile, out CredentialSecret? credentials);
-            Edit(_settings!, profile, credentials, loadError, TargetTitle, ApplyTarget);
+            return Edit(_settings!, profile, credentials, loadError, TargetTitle, ApplyTarget);
         }
 
-        private void EditSource()
+        private bool EditSource()
         {
             string? loadError = LoadSaved(_sourceSettings!, out ConnectionProfile? profile, out CredentialSecret? credentials);
-            Edit(_sourceSettings!, profile, credentials, loadError, SourceTitle, ApplySource);
+            return Edit(_sourceSettings!, profile, credentials, loadError, SourceTitle, ApplySource);
         }
 
         /// <summary>
@@ -420,14 +424,15 @@ namespace IwoBridge.Wpf.ViewModels
             RebuildCleanupChoices();
         }
 
-        private void AddMailbox()
+        /// <summary>«Добавить почту…»: ещё один ящик в списке очистки. Тот же ящик второй раз не добавляется — выбирается он.</summary>
+        private AccountOutcome? AddMailbox()
         {
             ISettingsStore store = _mailboxStores!.CreateNew();
             var connection = new ConnectionViewModel(
                 store, _connector!, _dialogs, _localOffset(), null, null, null, MailboxTitle, keepProfileWithoutPassword: false);
             if (!_connectionDialog!.Show(connection) || connection.OpenedSession is null)
             {
-                return;
+                return null;
             }
 
             ITargetSession session = connection.OpenedSession;
@@ -444,7 +449,7 @@ namespace IwoBridge.Wpf.ViewModels
                 }
 
                 CleanupChoice = same;
-                return;
+                return AccountOutcome.Done("Этот ящик уже есть в списке: " + same.Label + ".");
             }
 
             var choice = new CleanupChoice(
@@ -453,18 +458,18 @@ namespace IwoBridge.Wpf.ViewModels
             _added.Add(choice);
             RebuildCleanupChoices();
             CleanupChoice = choice;
+            return Changed("добавлена почта для очистки " + session.TargetLabel, "Почта добавлена: " + session.TargetLabel + ".");
         }
 
         /// <summary>
-        /// «Изменить…» добавленной почты: другой пароль, учётная запись, адрес или отметка «Запомнить». Окно открывается
-        /// заполненным; сохранённое заменяет прежнее подключение этой строки списка.
+        /// Изменить добавленную почту: другой пароль, учётная запись, адрес или отметка «Запомнить». Окно открывается
+        /// заполненным; сохранённое заменяет прежнее подключение этой строки списка. Возвращает, сохранено ли.
         /// </summary>
-        private void EditMailbox()
+        private bool EditMailbox(CleanupChoice? choice)
         {
-            CleanupChoice? choice = _cleanupChoice;
-            if (choice is null || !choice.IsAdded)
+            if (choice is null || !choice.IsAdded || IsBusy)
             {
-                return;
+                return false;
             }
 
             ISettingsStore store = choice.Store ?? _mailboxStores!.CreateNew();
@@ -483,7 +488,7 @@ namespace IwoBridge.Wpf.ViewModels
             if (!_connectionDialog!.Show(connection) || connection.OpenedSession is null || IsBusy)
             {
                 connection.OpenedSession?.Dispose();
-                return;
+                return false;
             }
 
             ITargetSession session = connection.OpenedSession;
@@ -494,50 +499,44 @@ namespace IwoBridge.Wpf.ViewModels
             if (index < 0)
             {
                 session.Dispose();
-                return;
+                return false;
             }
 
             _added[index] = replacement;
             RebuildCleanupChoices();
             CleanupChoice = replacement;
             choice.Session?.Dispose();
+            _log?.Info("Учётные записи: сохранена почта для очистки " + session.TargetLabel);
+            return true;
         }
 
-        private void RemoveMailbox()
+        /// <summary>Убрать добавленную почту из программы: из списка очистки, её настройки и пароль — с диска и из Windows.</summary>
+        private AccountOutcome? RemoveMailbox(CleanupChoice choice)
         {
-            CleanupChoice? choice = _cleanupChoice;
-            if (choice is null || !choice.IsAdded)
-            {
-                return;
-            }
-
             string name = choice.Session?.TargetLabel ?? MailboxName(choice.Profile);
             string question = "Почта " + name + " больше не будет в списке очистки."
-                + (choice.Store is null ? string.Empty : " Её сохранённый пароль будет удалён из Windows.")
+                + (choice.Store is null ? string.Empty : " Её настройки и сохранённый пароль будут удалены.")
                 + "\n\nКалендарь ящика не меняется.";
-            if (!_dialogs.Ask("Убрать почту из списка?", question, "Убрать") || IsBusy)
+            if (!_dialogs.Ask("Удалить почту?", question, "Удалить") || IsBusy)
             {
-                return;
+                return null;
             }
 
             string? error = null;
             if (choice.Store != null && !TryDelete(choice.Store, out error))
             {
-                Cleanup.ShowError(new Messages.UserMessage(
-                    "Почта не убрана из списка.",
-                    "Не удалось удалить её настройки. Проверьте права на папку программы и попробуйте ещё раз.",
-                    error));
-                return;
+                return AccountOutcome.Failed("Почта не удалена: " + error + " Проверьте права на папку программы и попробуйте ещё раз.");
             }
 
             _added.Remove(choice);
             RebuildCleanupChoices();
             choice.Session?.Dispose();
+            return Changed("удалена почта для очистки " + name, "Почта удалена: " + name + ".");
         }
 
         private static string AddedLabel(ITargetSession session) => "Почта: " + session.TargetLabel;
 
-        private static string LockedLabel(ConnectionProfile profile) => "Почта: " + MailboxName(profile) + " — нужен пароль («Изменить…»)";
+        private static string LockedLabel(ConnectionProfile profile) => "Почта: " + MailboxName(profile) + " — нужен пароль";
 
         private static string MailboxName(ConnectionProfile? profile) => profile is null
             ? "без адреса"
@@ -583,26 +582,32 @@ namespace IwoBridge.Wpf.ViewModels
             }
         }
 
-        private void Edit(
+        /// <summary>Окно «Подключение» для приёмника или источника; возвращает, сохранено ли подключение.</summary>
+        private bool Edit(
             ISettingsStore settings, ConnectionProfile? profile, CredentialSecret? credentials, string? loadError, string title, Action<ITargetSession> apply)
         {
             var connection = new ConnectionViewModel(
                 settings, _connector!, _dialogs, _localOffset(), profile, credentials, loadError, title,
                 credentials is null ? settings.LoadUserName() : null);
-            if (_connectionDialog!.Show(connection) && connection.OpenedSession != null)
+            if (!_connectionDialog!.Show(connection) || connection.OpenedSession is null)
             {
-                ITargetSession session = connection.OpenedSession;
-                try
-                {
-                    apply(session);
-                }
-                catch (Exception)
-                {
-                    // Не применилось (операция успела начаться) — новое подключение не должно остаться открытым.
-                    session.Dispose();
-                    throw;
-                }
+                return false;
             }
+
+            ITargetSession session = connection.OpenedSession;
+            try
+            {
+                apply(session);
+            }
+            catch (Exception)
+            {
+                // Не применилось (операция успела начаться) — новое подключение не должно остаться открытым.
+                session.Dispose();
+                throw;
+            }
+
+            _log?.Info("Учётные записи: сохранено подключение «" + title.Split(':')[0] + "» — " + session.TargetLabel);
+            return true;
         }
 
         private void ApplyTarget(ITargetSession session)
@@ -687,9 +692,7 @@ namespace IwoBridge.Wpf.ViewModels
 
         private void RaiseMailboxCommands()
         {
-            OnPropertyChanged(nameof(CanRemoveMailbox));
             EditMailboxCommand.RaiseCanExecuteChanged();
-            RemoveMailboxCommand.RaiseCanExecuteChanged();
         }
 
         /// <summary>
@@ -746,8 +749,8 @@ namespace IwoBridge.Wpf.ViewModels
                     OnPropertyChanged(nameof(IsBusy));
                     EditConnectionCommand.RaiseCanExecuteChanged();
                     EditSourceCommand.RaiseCanExecuteChanged();
-                    AddMailboxCommand.RaiseCanExecuteChanged();
-                    RemoveMailboxCommand.RaiseCanExecuteChanged();
+                    EditMailboxCommand.RaiseCanExecuteChanged();
+                    AccountsCommand.RaiseCanExecuteChanged();
                 }
             }
 

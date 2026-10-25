@@ -458,6 +458,10 @@ namespace IwoBridge.Wpf.ViewModels
                     Summary = DescribePlan(preview.Plan);
                     RaisePreviewProperties();
                     Step = CleanupStep.Reviewed;
+                    _log?.Info(
+                        "Предпросмотр очистки: " + session.TargetLabel + " [" + PeriodText(scope!) + "]: будет удалено " + Summary
+                            + (preview.CanProceed ? string.Empty : ". Удалять по этим данным нельзя: " + preview.BlockReason),
+                        isProblem: !preview.CanProceed);
                 }
                 catch (OperationCanceledException)
                 {
@@ -469,6 +473,7 @@ namespace IwoBridge.Wpf.ViewModels
                 {
                     Error = session.Describe(ex);
                     Step = CleanupStep.Choose;
+                    _log?.Info("Предпросмотр очистки не построен: " + session.TargetLabel + " — " + Error.Title, isProblem: true);
                 }
                 finally
                 {
@@ -492,7 +497,7 @@ namespace IwoBridge.Wpf.ViewModels
             ClearResult();
             Step = CleanupStep.Deleting;
             DateTime started = DateTime.UtcNow;
-            string period = preview.Scope.IsWholeCalendar ? "весь календарь" : OperationHistory.Period(_periodStart, _periodEnd);
+            string period = PeriodText(preview.Scope);
             _log?.Info("Очистка начата: " + session.TargetLabel + " [" + period + "], " + DescribePlan(preview.Plan)
                 + (_hardDelete ? ", безвозвратно" : ", в «Удалённые»"));
             CleanupResult? result = null;
@@ -547,6 +552,10 @@ namespace IwoBridge.Wpf.ViewModels
                 OperationHistory.Details(ResultText, Error)
                     .Concat(result?.ManifestPath is null ? Enumerable.Empty<string>() : new[] { "Список удаляемого: " + result.ManifestPath })));
         }
+
+        /// <summary>Объём очистки для консоли и журнала: «весь календарь» или «01.10.2026 – 31.12.2026».</summary>
+        private string PeriodText(CleanupScope scope) =>
+            scope.IsWholeCalendar ? "весь календарь" : OperationHistory.Period(_periodStart, _periodEnd);
 
         private bool TryBuildScope(TargetTimeZone zone, out CleanupScope? scope)
         {

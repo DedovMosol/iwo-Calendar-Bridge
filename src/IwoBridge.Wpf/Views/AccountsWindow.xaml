@@ -1,0 +1,91 @@
+<Window x:Class="IwoBridge.Wpf.Views.AccountsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:views="clr-namespace:IwoBridge.Wpf.Views"
+        Title="Учётные записи — iwo Calendar Bridge"
+        Style="{StaticResource AppWindow}"
+        Width="980" Height="460" MinWidth="640" MinHeight="340"
+        ResizeMode="CanResizeWithGrip" WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
+        FocusManager.FocusedElement="{Binding ElementName=AccountRows}">
+    <!-- Окно «Учётные записи» (модель — AccountsViewModel): все подключения по EWS одним списком — приёмник, источник
+         по EWS, добавленная почта для очистки. Для выбранной строки: изменить (двойной щелчок), забыть пароль,
+         удалить (клавиша Delete). Календари ящиков при этом не меняются. Esc закрывает окно. -->
+    <Window.InputBindings>
+        <KeyBinding Key="Escape" Command="ApplicationCommands.Close" />
+    </Window.InputBindings>
+    <Window.CommandBindings>
+        <CommandBinding Command="ApplicationCommands.Close" Executed="OnClose" />
+    </Window.CommandBindings>
+
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <StackPanel>
+            <TextBlock Style="{StaticResource SectionText}" Text="Подключения к Exchange по EWS" />
+            <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource MutedTextBrush}" Margin="0,0,0,10"
+                       Text="Приёмник — куда копировать. Источник по EWS — откуда, если не из Outlook. Почта для очистки — другие ящики. Пароли хранятся в диспетчере учётных данных Windows. Удаление учётной записи не меняет календарь ящика." />
+            <Border Style="{StaticResource InfoBanner}" Visibility="{Binding ReadOnlyReason, Converter={StaticResource VisibleWhen}}">
+                <TextBlock TextWrapping="Wrap" Text="{Binding ReadOnlyReason}" />
+            </Border>
+        </StackPanel>
+
+        <DataGrid x:Name="AccountRows" Grid.Row="1" ItemsSource="{Binding Rows}" SelectedItem="{Binding Selected}"
+                  SelectionMode="Single" AutomationProperties.Name="Учётные записи" AutomationProperties.AutomationId="AccountRows">
+            <DataGrid.InputBindings>
+                <MouseBinding Gesture="LeftDoubleClick" Command="{Binding EditCommand}" />
+                <KeyBinding Key="Delete" Command="{Binding DeleteCommand}" />
+            </DataGrid.InputBindings>
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="Назначение" Binding="{Binding RoleText}" Width="150" MinWidth="110" ElementStyle="{StaticResource TrimmedCell}" />
+                <DataGridTextColumn Header="Ящик" Binding="{Binding Mailbox}" Width="1.3*" MinWidth="140" ElementStyle="{StaticResource TrimmedCell}" />
+                <DataGridTextColumn Header="Сервер" Binding="{Binding Server}" Width="*" MinWidth="110" ElementStyle="{StaticResource TrimmedCell}" />
+                <DataGridTextColumn Header="Учётная запись" Binding="{Binding UserName}" Width="150" MinWidth="100" ElementStyle="{StaticResource TrimmedCell}" />
+                <DataGridTextColumn Header="Пароль" Binding="{Binding Password}" Width="170" MinWidth="110" ElementStyle="{StaticResource TrimmedCell}" />
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <TextBlock Grid.Row="2" Margin="0,10,0,0" TextWrapping="Wrap" views:Announce.Text="{Binding Status}"
+                   AutomationProperties.LiveSetting="Polite" AutomationProperties.AutomationId="AccountStatus"
+                   Visibility="{Binding Status, Converter={StaticResource VisibleWhen}}">
+            <TextBlock.Style>
+                <Style TargetType="TextBlock">
+                    <Setter Property="Foreground" Value="{DynamicResource SuccessTextBrush}" />
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding StatusIsError}" Value="True">
+                            <Setter Property="Foreground" Value="{DynamicResource ErrorTextBrush}" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </TextBlock.Style>
+        </TextBlock>
+
+        <!-- Действия: слева — с выбранной строкой, справа — закрыть. В узком окне кнопки переносятся. -->
+        <Grid Grid.Row="3" Margin="0,14,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <WrapPanel>
+                <Button Margin="0,0,8,6" Content="_Добавить почту…" Command="{Binding AddCommand}"
+                        AutomationProperties.AutomationId="AddAccountButton"
+                        ToolTip="Подключить ещё один ящик по EWS, чтобы очищать его календарь" />
+                <Button Margin="0,0,8,6" Content="{Binding EditText}" Command="{Binding EditCommand}"
+                        AutomationProperties.AutomationId="EditAccountButton"
+                        ToolTip="Сервер, ящик, учётная запись, пароль и часовой пояс выбранного подключения (двойной щелчок по строке)" />
+                <Button Margin="0,0,8,6" Content="Забыть _пароль" Command="{Binding ForgetPasswordCommand}"
+                        AutomationProperties.AutomationId="ForgetPasswordButton"
+                        ToolTip="Удалить пароль выбранной учётной записи из Windows. До закрытия программы подключение работает, при следующем запуске программа спросит пароль." />
+                <Button Margin="0,0,8,6" Content="_Удалить…" Command="{Binding DeleteCommand}"
+                        AutomationProperties.AutomationId="DeleteAccountButton"
+                        ToolTip="Удалить выбранное подключение из программы: настройки и сохранённый пароль (клавиша Delete). Календарь ящика не меняется." />
+            </WrapPanel>
+            <Button Grid.Column="1" Margin="16,0,0,6" VerticalAlignment="Top" Content="Закрыть" IsCancel="True"
+                    Command="ApplicationCommands.Close" AutomationProperties.AutomationId="CloseAccountsButton" />
+        </Grid>
+    </Grid>
+</Window>

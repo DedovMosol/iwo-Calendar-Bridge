@@ -95,7 +95,8 @@ namespace IwoBridge.Wpf
             var dialogs = new WpfDialogService();
             bool demo = e.Args.Any(a => string.Equals(a, "--demo", StringComparison.OrdinalIgnoreCase));
             bool tray = e.Args.Any(a => string.Equals(a, RegistryAutostart.TrayArgument, StringComparison.OrdinalIgnoreCase));
-            IOperationLog log = CreateLog(demo);
+            var console = new ConsoleViewModel();
+            IOperationLog log = CreateLog(demo, console);
             _log = log;
             MainViewModel viewModel = demo
                 ? new MainViewModel(
@@ -103,8 +104,9 @@ namespace IwoBridge.Wpf
                     dialogs,
                     new DemoSources(),
                     new CopyServices(new MemoryCopySettingsStore(), new DispatcherOneShotTimer(), autostart: null),
-                    log)
-                : CreateMain(dialogs, log);
+                    log,
+                    console)
+                : CreateMain(dialogs, log, console);
             _main = viewModel;
 
             var window = new MainWindow(viewModel, dialogs);
@@ -166,28 +168,28 @@ namespace IwoBridge.Wpf
         }
 
         /// <summary>
-        /// Журнал операций: файл <c>logs\history.jsonl</c> (в демонстрационном режиме — память) и копия в консоль, если
-        /// программу запустили из консоли или её вывод перенаправлен в файл.
+        /// Журнал операций: файл <c>logs\history.jsonl</c> (в демонстрационном режиме — память), копия в панель «Консоль»
+        /// окна и, если программу запустили из консоли или её вывод перенаправлен в файл, — туда же.
         /// </summary>
-        private IOperationLog CreateLog(bool demo)
+        private IOperationLog CreateLog(bool demo, ConsoleViewModel pane)
         {
             IOperationLog store = demo
                 ? new MemoryOperationLog()
                 : new JsonLinesOperationLog(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "logs", "history.jsonl"));
+            IOperationLog log = new MirroredOperationLog(store, pane.Append);
             _console = ConsoleOutput.TryOpen();
-            if (_console is null)
+            if (_console != null)
             {
-                return store;
+                log = new MirroredOperationLog(log, _console);
             }
 
-            var mirrored = new MirroredOperationLog(store, _console);
             string version = typeof(App).Assembly.GetName().Version?.ToString(3) ?? string.Empty;
-            mirrored.Info("iwo Calendar Bridge " + version + " запущена" + (demo ? " (демонстрационный режим)" : string.Empty)
+            log.Info("iwo Calendar Bridge " + version + " запущена" + (demo ? " (демонстрационный режим)" : string.Empty)
                 + ". Журнал операций: " + (store.Location ?? "в памяти") + ".");
-            return mirrored;
+            return log;
         }
 
-        private MainViewModel CreateMain(WpfDialogService dialogs, IOperationLog log)
+        private MainViewModel CreateMain(WpfDialogService dialogs, IOperationLog log, ConsoleViewModel console)
         {
             string root = AppDomain.CurrentDomain.BaseDirectory;
             var credentials = new WindowsCredentialStore();
@@ -199,7 +201,7 @@ namespace IwoBridge.Wpf
             var autostart = new RegistryAutostart(System.Reflection.Assembly.GetEntryAssembly()!.Location);
             autostart.Refresh();
             var copy = new CopyServices(new FileCopySettingsStore(Path.Combine(root, "config", "copy.json")), new DispatcherOneShotTimer(), autostart);
-            return new MainViewModel(target, connector, dialogs, dialogs, LocalOffset, source, _outlook, copy, mailboxes, log);
+            return new MainViewModel(target, connector, dialogs, dialogs, LocalOffset, source, _outlook, copy, mailboxes, log, console);
         }
 
         private void OnPowerModeChanged(object? sender, Microsoft.Win32.PowerModeChangedEventArgs e)

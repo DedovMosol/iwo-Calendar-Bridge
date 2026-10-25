@@ -4,6 +4,8 @@
              xmlns:views="clr-namespace:IwoBridge.Wpf.Views"
              ShutdownMode="OnMainWindowClose">
     <!-- Общий вид всех окон: шрифт, цвета, кнопки, карточки, поля.
+         - Шрифт всех окон — Times New Roman (есть в любой Windows). Кегль на единицу больше привычного для Segoe UI:
+           у Times New Roman ниже строчные буквы, и при том же кегле текст читался бы мельче.
          - Только системные шрифты и элементы, которые есть начиная с Windows 7 (без значков Segoe MDL2: значки
            нарисованы фигурами Path).
          - Цвета — с контрастом текста не ниже 4.5:1 (WCAG AA). Все цвета подключаются через DynamicResource: в режиме
@@ -43,12 +45,19 @@
         <SolidColorBrush x:Key="GridLineBrush" Color="#EBEBEB" />
         <SolidColorBrush x:Key="RowAltBrush" Color="#FAFAFA" />
 
+        <!-- Консоль внизу окна — тёмная, как консоль Windows. Контраст текста к фону не ниже 7:1. -->
+        <SolidColorBrush x:Key="ConsoleBackBrush" Color="#1E1E1E" />
+        <SolidColorBrush x:Key="ConsoleTextBrush" Color="#E8E8E8" />
+        <SolidColorBrush x:Key="ConsoleSuccessBrush" Color="#8FD18F" />
+        <SolidColorBrush x:Key="ConsoleProblemBrush" Color="#FF9E9E" />
+        <SolidColorBrush x:Key="ConsoleMutedBrush" Color="#B8B8B8" />
+
         <!-- Задаётся каждому окну явно (Style="{StaticResource AppWindow}"): неявный стиль Window на окна-наследники
              (MainWindow и другие) в WPF не распространяется. -->
         <Style x:Key="AppWindow" TargetType="Window">
             <Setter Property="Language" Value="ru-RU" />
-            <Setter Property="FontFamily" Value="Segoe UI" />
-            <Setter Property="FontSize" Value="14" />
+            <Setter Property="FontFamily" Value="Times New Roman" />
+            <Setter Property="FontSize" Value="15" />
             <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
             <Setter Property="Background" Value="{DynamicResource PageBrush}" />
             <Setter Property="UseLayoutRounding" Value="True" />
@@ -58,26 +67,26 @@
         </Style>
 
         <Style x:Key="TitleText" TargetType="TextBlock">
-            <Setter Property="FontSize" Value="20" />
+            <Setter Property="FontSize" Value="22" />
             <Setter Property="FontWeight" Value="SemiBold" />
         </Style>
 
         <Style x:Key="SectionText" TargetType="TextBlock">
-            <Setter Property="FontSize" Value="16" />
+            <Setter Property="FontSize" Value="17" />
             <Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="Margin" Value="0,0,0,8" />
         </Style>
 
         <Style x:Key="HintText" TargetType="TextBlock">
             <Setter Property="Foreground" Value="{DynamicResource MutedTextBrush}" />
-            <Setter Property="FontSize" Value="13" />
+            <Setter Property="FontSize" Value="14" />
             <Setter Property="TextWrapping" Value="Wrap" />
             <Setter Property="Margin" Value="0,3,0,0" />
         </Style>
 
         <Style x:Key="FieldErrorText" TargetType="TextBlock">
             <Setter Property="Foreground" Value="{DynamicResource ErrorTextBrush}" />
-            <Setter Property="FontSize" Value="13" />
+            <Setter Property="FontSize" Value="14" />
             <Setter Property="TextWrapping" Value="Wrap" />
             <Setter Property="Margin" Value="0,3,0,0" />
             <Setter Property="Visibility" Value="{Binding Text, RelativeSource={RelativeSource Self}, Converter={StaticResource VisibleWhen}}" />
@@ -344,9 +353,9 @@
 
         <!-- Вкладки выбора операции (главное окно): крупные заголовки, выбранная — с полосой цвета акцента снизу.
              Стиль задаётся только своим вкладкам (ItemContainerStyle), вложенные вкладки списков остаются обычными. -->
+        <!-- Кегль, жирность и цвет — только у заголовка (ContentPresenter «Header»), не у самой вкладки: содержимое вкладки
+             логически принадлежит ей и унаследовало бы их — вся страница стала бы крупнее, жирнее и синей. -->
         <Style x:Key="OperationTab" TargetType="TabItem">
-            <Setter Property="FontSize" Value="15" />
-            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="ToolTipService.ShowOnDisabled" Value="True" />
             <Setter Property="Template">
@@ -354,8 +363,9 @@
                     <ControlTemplate TargetType="TabItem">
                         <Grid x:Name="Root" Background="Transparent" Margin="0,0,4,0">
                             <Border x:Name="Overlay" Background="{DynamicResource TextBrush}" Opacity="0" />
-                            <ContentPresenter ContentSource="Header" RecognizesAccessKey="True" Margin="18,7,18,9"
-                                              HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            <ContentPresenter x:Name="Header" ContentSource="Header" RecognizesAccessKey="True" Margin="18,7,18,9"
+                                              HorizontalAlignment="Center" VerticalAlignment="Center"
+                                              TextElement.FontSize="16" TextElement.Foreground="{DynamicResource TextBrush}" />
                             <Border x:Name="Underline" Height="3" VerticalAlignment="Bottom" Background="{DynamicResource AccentBrush}"
                                     Visibility="Collapsed" />
                             <Border x:Name="Focus" BorderBrush="{DynamicResource FocusBrush}" BorderThickness="1" Visibility="Collapsed" />
@@ -363,8 +373,8 @@
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsSelected" Value="True">
                                 <Setter TargetName="Underline" Property="Visibility" Value="Visible" />
-                                <Setter Property="FontWeight" Value="SemiBold" />
-                                <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+                                <Setter TargetName="Header" Property="TextElement.FontWeight" Value="SemiBold" />
+                                <Setter TargetName="Header" Property="TextElement.Foreground" Value="{DynamicResource AccentBrush}" />
                             </Trigger>
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Trigger.EnterActions>
@@ -378,7 +388,7 @@
                                 <Setter TargetName="Focus" Property="Visibility" Value="Visible" />
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
-                                <Setter Property="Foreground" Value="{DynamicResource DisabledTextBrush}" />
+                                <Setter TargetName="Header" Property="TextElement.Foreground" Value="{DynamicResource DisabledTextBrush}" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>

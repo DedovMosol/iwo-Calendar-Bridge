@@ -105,6 +105,21 @@ namespace IwoBridge.Wpf.ViewModels
             private set => SetProperty(ref _outlookError, value);
         }
 
+        /// <summary>
+        /// Состояние Outlook — в консоль, только когда оно меняется: расписание перечитывает список перед каждым запуском,
+        /// и закрытый на ночь Outlook не должен давать строку каждые полчаса.
+        /// </summary>
+        private void LogOutlook(string state, bool isProblem)
+        {
+            if (state == _outlookLogged)
+            {
+                return;
+            }
+
+            _outlookLogged = state;
+            _log?.Info("Outlook: " + state, isProblem);
+        }
+
         /// <param name="substitute">Прежний календарь не нашёлся — выбрать другой (по просьбе человека) или оставить пусто.</param>
         private async Task RefreshOutlookAsync(bool substitute)
         {
@@ -146,6 +161,8 @@ namespace IwoBridge.Wpf.ViewModels
                 {
                     OutlookError = "В Outlook не найдено ни одного календаря.";
                 }
+
+                LogOutlook(calendars.Length == 0 ? "не найдено ни одного календаря" : "календарей в списке — " + RussianText.Number(calendars.Length), calendars.Length == 0);
             }
 #pragma warning disable CA1031 // Outlook не открыт или занят — показать текст, окно рабочее.
             catch (Exception ex)
@@ -154,6 +171,7 @@ namespace IwoBridge.Wpf.ViewModels
                 OutlookCalendars = Array.Empty<SourceChoice>();
                 OutlookCalendar = null;
                 OutlookError = ex.Message;
+                LogOutlook(ex.Message, isProblem: true);
             }
             finally
             {
@@ -195,12 +213,14 @@ namespace IwoBridge.Wpf.ViewModels
                 _savedOwner = text;
                 OutlookCalendars = _outlookCalendars.Where(c => c.Key != found.Key).Concat(new[] { found }).ToArray();
                 OutlookCalendar = found;
+                _log?.Info("Outlook: найден календарь " + found.Label);
             }
 #pragma warning disable CA1031 // Не найден, нет прав, Outlook закрыт — текст под полем, окно рабочее.
             catch (Exception ex)
 #pragma warning restore CA1031
             {
                 OutlookError = ex.Message;
+                _log?.Info("Outlook: «" + text + "» — " + ex.Message, isProblem: true);
             }
             finally
             {

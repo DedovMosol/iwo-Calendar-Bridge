@@ -6,8 +6,8 @@
         Style="{StaticResource AppWindow}"
         Width="1120" Height="780" MinWidth="720" MinHeight="480"
         WindowStartupLocation="CenterScreen">
-    <!-- Главное окно. Сверху — подключения: «Приёмник…» (куда копировать) и «Источник (EWS)…» (если копировать с
-         сервера, а не из Outlook). Ниже — выбор операции вкладками:
+    <!-- Главное окно. Сверху — приёмник и «Учётные записи…» (все подключения: приёмник, источник по EWS, почта для
+         очистки), «История», «Справка». Внизу — консоль: ход и итог операций. Между ними — выбор операции вкладками:
           - «Копирование» — откуда → куда: источник, период, предпросмотр с выбором действий, копирование, итог;
           - «Очистка» — какой ящик, что удалить, предпросмотр, удаление с подтверждением вводом адреса ящика, итог.
 
@@ -27,13 +27,12 @@
     </Window.InputBindings>
 
     <DockPanel>
-        <!-- Шапка: название и приёмник одной строкой, справа — подключения. -->
+        <!-- Шапка: название и приёмник одной строкой, справа — учётные записи, история, справка. -->
         <Border DockPanel.Dock="Top" Background="{DynamicResource HeaderBrush}" Padding="20,10">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
@@ -44,18 +43,14 @@
                            ToolTip="{Binding TargetLabel}" AutomationProperties.Name="Приёмник">
                     <Run Text="Приёмник:" /> <Run Text="{Binding TargetLabel, Mode=OneWay}" />
                 </TextBlock>
-                <Button Grid.Column="2" Margin="16,0,0,0" Content="Приё_мник…" VerticalAlignment="Center"
-                        AutomationProperties.AutomationId="EditTargetButton"
-                        Command="{Binding EditConnectionCommand}"
-                        ToolTip="Куда копировать (и что очищать): сервер Exchange по EWS, ящик, учётная запись, пароль, часовой пояс календаря. Во время операции недоступно." />
-                <Button Grid.Column="3" Margin="8,0,0,0" Content="Исто_чник (EWS)…" VerticalAlignment="Center"
-                        AutomationProperties.AutomationId="EditSourceButton"
-                        Command="{Binding EditSourceCommand}"
-                        ToolTip="Необязательно: откуда копировать, если не из Outlook этого компьютера, — другой сервер Exchange по EWS." />
-                <Button Grid.Column="4" Margin="8,0,0,0" Content="История" VerticalAlignment="Center"
+                <Button Grid.Column="2" Margin="16,0,0,0" Content="Учётные _записи…" VerticalAlignment="Center"
+                        AutomationProperties.AutomationId="AccountsButton"
+                        Command="{Binding AccountsCommand}"
+                        ToolTip="Все подключения по EWS: приёмник (куда копировать), источник по EWS (откуда, если не из Outlook), почта для очистки. Добавить, изменить, забыть пароль, удалить. Во время операции недоступно." />
+                <Button Grid.Column="3" Margin="8,0,0,0" Content="История" VerticalAlignment="Center"
                         Command="{Binding HistoryCommand}" AutomationProperties.AutomationId="HistoryButton"
                         ToolTip="Журнал операций: когда, что скопировано или удалено, сколько, с каким итогом. (Ctrl+H)" />
-                <Button Grid.Column="5" Margin="8,0,0,0" Content="Сп_равка" VerticalAlignment="Center"
+                <Button Grid.Column="4" Margin="8,0,0,0" Content="Сп_равка" VerticalAlignment="Center"
                         Command="{Binding HelpCommand}" AutomationProperties.AutomationId="HelpButton"
                         ToolTip="Как пользоваться программой — по шагам. (F1)" />
             </Grid>
@@ -68,6 +63,15 @@
             <TextBlock TextWrapping="Wrap"
                        Text="Демонстрационный режим: календари выдуманные, сервер и Outlook не используются." />
         </Border>
+
+        <!-- Вкладки сверху, консоль снизу; высоту консоли меняет разделитель, «Свернуть» оставляет её заголовок
+             (строки сетки переключает MainWindow.xaml.cs). -->
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*" MinHeight="180" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition x:Name="ConsoleRow" Height="130" MinHeight="64" />
+            </Grid.RowDefinitions>
 
         <!-- Выбор операции. Во время операции вкладка не переключается (модель не даёт), а «Остановить» доступна. -->
         <TabControl Style="{StaticResource OperationTabs}" SelectedIndex="{Binding OperationIndex}" AutomationProperties.Name="Операция">
@@ -82,7 +86,7 @@
                      страница ровно в окно не даёт лишней полосы прокрутки. FillPanel отдаёт карточке со списком всё
                      свободное место. -->
                 <!-- Пока идёт автокопирование (вкладка «Копирование» занята), очистка ждёт: одна операция с ящиком за раз. -->
-                <ScrollViewer x:Name="Page" Padding="20,14" Focusable="False" IsEnabled="{Binding Copy.IsIdle}"
+                <ScrollViewer x:Name="Page" Padding="20,10" Focusable="False" IsEnabled="{Binding Copy.IsIdle}"
                               VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <views:FillPanel x:Name="PageContent" DataContext="{Binding Cleanup}"
                                      ViewportHeight="{Binding ViewportHeight, ElementName=Page}">
@@ -93,12 +97,12 @@
                             <StackPanel>
                                 <TextBlock Style="{StaticResource SectionText}" Text="Подключение не настроено" />
                                 <TextBlock TextWrapping="Wrap"
-                                           Text="Очистить можно календарь подключённого ящика — кнопка «Приёмник…» или «Источник (EWS)…» вверху окна." />
+                                           Text="Очистить можно календарь подключённого ящика. Подключите его в окне «Учётные записи…» — кнопка вверху окна." />
                             </StackPanel>
                         </Border>
 
                         <!-- Шаг 1. Какой ящик и что удалить. Виден, пока в списке есть ящики: выбранная почта без пароля
-                             не прячет список и кнопку «Изменить…». -->
+                             не прячет список и ссылку «Ввести пароль…». -->
                         <Border Style="{StaticResource Card}"
                                 Visibility="{Binding DataContext.HasCleanupChoices, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource VisibleWhen}}">
                             <StackPanel>
@@ -119,30 +123,24 @@
                                               SelectedItem="{Binding DataContext.CleanupChoice, RelativeSource={RelativeSource AncestorType=Window}}"
                                               AutomationProperties.Name="Какой ящик очищать" AutomationProperties.AutomationId="CleanupMailbox"
                                               ToolTip="Календарь какого ящика очищать: приёмника, источника по EWS или добавленной почты" />
-                                    <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,0,0"
-                                                IsEnabled="{Binding IsIdle}">
-                                        <Button Style="{StaticResource LinkButton}" Content="_Добавить почту…"
-                                                Command="{Binding DataContext.AddMailboxCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                Visibility="{Binding DataContext.CanAddMailboxes, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource VisibleWhen}}"
-                                                AutomationProperties.AutomationId="AddMailboxButton"
-                                                ToolTip="Подключить ещё один ящик по EWS и очищать его календарь" />
-                                        <Button Style="{StaticResource LinkButton}" Content="Изме_нить…" Margin="16,0,0,0"
-                                                Command="{Binding DataContext.EditMailboxCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                Visibility="{Binding DataContext.CanRemoveMailbox, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource VisibleWhen}}"
-                                                AutomationProperties.AutomationId="EditMailboxButton"
-                                                ToolTip="Другой пароль, учётная запись или адрес выбранной почты" />
-                                        <Button Style="{StaticResource LinkButton}" Content="У_брать из списка" Margin="16,0,0,0"
-                                                Command="{Binding DataContext.RemoveMailboxCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                Visibility="{Binding DataContext.CanRemoveMailbox, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource VisibleWhen}}"
-                                                AutomationProperties.AutomationId="RemoveMailboxButton"
-                                                ToolTip="Убрать выбранную почту из списка. Календарь ящика не меняется." />
-                                    </StackPanel>
+                                    <!-- Другой ящик, пароль, удаление — в окне «Учётные записи» (одно место для всех подключений). -->
+                                    <Button Grid.Column="3" Style="{StaticResource LinkButton}" Margin="12,0,0,0" VerticalAlignment="Center"
+                                            Content="учётные записи…" IsEnabled="{Binding IsIdle}"
+                                            Command="{Binding DataContext.AccountsCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                            AutomationProperties.AutomationId="CleanupAccountsLink"
+                                            ToolTip="Добавить другой ящик для очистки, изменить пароль или удалить подключение" />
                                 </Grid>
 
-                                <!-- Выбрана почта без сохранённого пароля: подключения нет, остальное недоступно до «Изменить…». -->
-                                <TextBlock Style="{StaticResource HintText}" Margin="0,0,0,8"
-                                           Visibility="{Binding HasSession, Converter={StaticResource VisibleWhen}, ConverterParameter=invert}"
-                                           Text="Пароль этой почты не сохранён. Нажмите «Изменить…» и введите его, чтобы очищать её календарь." />
+                                <!-- Выбрана почта без сохранённого пароля: подключения нет, остальное недоступно до ввода пароля. -->
+                                <WrapPanel Margin="0,0,0,8"
+                                           Visibility="{Binding HasSession, Converter={StaticResource VisibleWhen}, ConverterParameter=invert}">
+                                    <TextBlock Style="{StaticResource HintText}" Margin="0,0,8,0" VerticalAlignment="Center"
+                                               Text="Пароль этой почты не сохранён, очищать её календарь пока нельзя." />
+                                    <Button Style="{StaticResource LinkButton}" VerticalAlignment="Center" Content="Ввести пароль…"
+                                            Command="{Binding DataContext.EditMailboxCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                            AutomationProperties.AutomationId="EnterMailboxPassword"
+                                            ToolTip="Открыть подключение этой почты и ввести пароль" />
+                                </WrapPanel>
 
                                 <StackPanel IsEnabled="{Binding IsIdle}" Visibility="{Binding HasSession, Converter={StaticResource VisibleWhen}}">
                                     <RadioButton GroupName="Scope" IsChecked="{Binding IsPeriod}" Content="События за п_ериод"
@@ -251,7 +249,7 @@
                                     </Style>
                                 </Border.Style>
                                 <StackPanel>
-                                    <TextBlock FontWeight="SemiBold" FontSize="16" TextWrapping="Wrap"
+                                    <TextBlock FontWeight="SemiBold" FontSize="17" TextWrapping="Wrap"
                                                views:Announce.Text="{Binding ResultTitle}" AutomationProperties.LiveSetting="Polite" />
                                     <TextBlock TextWrapping="Wrap" Margin="0,4,0,0" Text="{Binding ResultText}" />
                                     <Button Style="{StaticResource LinkButton}" HorizontalAlignment="Left" Margin="0,8,0,0"
@@ -278,8 +276,8 @@
                                 <StackPanel Grid.Row="0">
                                     <WrapPanel>
                                         <TextBlock Style="{StaticResource SectionText}" Margin="0,0,16,4" Text="2. Проверьте список" />
-                                        <TextBlock FontSize="16" Text="Будет удалено:" Margin="0,0,6,4" />
-                                        <TextBlock FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,4"
+                                        <TextBlock FontSize="17" Text="Будет удалено:" Margin="0,0,6,4" />
+                                        <TextBlock FontSize="17" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,4"
                                                    views:Announce.Text="{Binding Summary}" AutomationProperties.LiveSetting="Polite" />
                                     </WrapPanel>
                                     <TextBlock Style="{StaticResource HintText}" Visibility="{Binding TrimmedSeriesCount, Converter={StaticResource VisibleWhen}}">
@@ -377,5 +375,12 @@
                 </ScrollViewer>
             </TabItem>
         </TabControl>
+
+            <GridSplitter x:Name="ConsoleSplitter" Grid.Row="1" Height="6" HorizontalAlignment="Stretch" VerticalAlignment="Center"
+                          ResizeDirection="Rows" ResizeBehavior="PreviousAndNext" Background="{DynamicResource PageBrush}"
+                          Cursor="SizeNS" AutomationProperties.Name="Высота консоли"
+                          ToolTip="Потяните, чтобы изменить высоту консоли" />
+            <views:ConsolePanel x:Name="ConsolePane" Grid.Row="2" DataContext="{Binding Console}" />
+        </Grid>
     </DockPanel>
 </Window>

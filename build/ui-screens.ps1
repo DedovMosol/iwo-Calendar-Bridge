@@ -14,6 +14,8 @@ param(
 #   cleanup-2-preview.png, cleanup-3-confirm.png, cleanup-4-result.png
 #   help.png             help window
 #   history.png          history window (operations of this run)
+#   accounts.png         accounts window (demo: read-only)
+# The console panel at the bottom of the main window is in every main-window screenshot.
 # Controls are found by AutomationId; the file is ASCII-only (Windows PowerShell 5.1 reads BOM-less UTF-8 as ANSI).
 Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
 $shot = Join-Path $PSScriptRoot 'screenshot.ps1'
@@ -129,6 +131,16 @@ if ($history -ne $null) {
     }
     ShotWindow $history 'history.png'
     $history.GetCurrentPattern([System.Windows.Automation.WindowPattern]::Pattern).Close()
+    Start-Sleep -Milliseconds 500
+}
+
+# --- Accounts (demo: read-only list) ---
+Click-Async (Find-ById $root 'AccountsButton')
+Start-Sleep -Seconds 2
+$accounts = Find-Owned 'AccountRows'
+if ($accounts -ne $null) {
+    ShotWindow $accounts 'accounts.png'
+    $accounts.GetCurrentPattern([System.Windows.Automation.WindowPattern]::Pattern).Close()
     Start-Sleep -Milliseconds 500
 }
 

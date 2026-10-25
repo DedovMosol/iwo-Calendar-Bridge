@@ -78,6 +78,11 @@ namespace IwoBridge.Wpf.Views
             return window.ShowDialog() == true;
         }
 
+        public void ShowAccounts(AccountsViewModel accounts)
+        {
+            new AccountsWindow(accounts) { Owner = ActiveWindow() }.ShowDialog();
+        }
+
         /// <summary>История — немодальная, как справка: можно смотреть журнал и работать в программе одновременно.</summary>
         public void ShowHistory(Func<HistoryViewModel> create)
         {

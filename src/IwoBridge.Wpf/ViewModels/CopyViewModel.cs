@@ -40,6 +40,7 @@ namespace IwoBridge.Wpf.ViewModels
         private IReadOnlyList<SourceChoice> _outlookCalendars = Array.Empty<SourceChoice>();
         private SourceChoice? _outlookCalendar;
         private string? _outlookError;
+        private string? _outlookLogged;
         private bool _isLoadingOutlook;
         private string _calendarSearch = string.Empty;
         private readonly List<SourceChoice> _foundShared = new List<SourceChoice>();
@@ -177,7 +178,7 @@ namespace IwoBridge.Wpf.ViewModels
                 // быть перезапущен. Выбранный календарь не подменяется другим: не нашёлся — запуск не выполняется.
                 await RefreshOutlookAsync(substitute: false).ConfigureAwait(true);
 
-                // Пока Outlook отдавал список, человек мог начать другую операцию или открыть окно («Приёмник…»,
+                // Пока Outlook отдавал список, человек мог начать другую операцию или открыть окно («Учётные записи…»,
                 // «Скопировать?»): проверка повторяется, а приёмник берётся заново — его могли сменить.
                 if (_isBusy || _otherBusy() || _dialogs.IsShowingDialog)
                 {
@@ -408,7 +409,7 @@ namespace IwoBridge.Wpf.ViewModels
 
         public bool HasTarget => _target != null;
 
-        public string TargetLabel => _target?.TargetLabel ?? "Приёмник не настроен — кнопка «Приёмник…» вверху окна.";
+        public string TargetLabel => _target?.TargetLabel ?? "приёмник не настроен";
 
         public string TimeZoneText => _target is null ? string.Empty : RussianText.Zone(_target.TimeZone);
 
@@ -451,7 +452,7 @@ namespace IwoBridge.Wpf.ViewModels
 
         public bool HasEwsSource => _ewsSource != null;
 
-        public string EwsSourceLabel => _ewsSource?.TargetLabel ?? "Не настроен — кнопка «Источник (EWS)…» вверху окна.";
+        public string EwsSourceLabel => _ewsSource?.TargetLabel ?? "не настроен";
 
         // ---- Период ----
 
@@ -723,6 +724,8 @@ namespace IwoBridge.Wpf.ViewModels
                 _runner = runner;
                 Rows = rows;
                 RaisePreview();
+                _log?.Info("Предпросмотр копирования: " + runner.SourceLabel + " → " + target.TargetLabel
+                    + " [" + OperationHistory.Period(_periodStart, _periodEnd) + "]: " + Summary, isProblem: !preview.Plan.CanApply);
             }
             catch (OperationCanceledException)
             {
@@ -733,6 +736,7 @@ namespace IwoBridge.Wpf.ViewModels
 #pragma warning restore CA1031
             {
                 Error = DescribeError(ex, target);
+                _log?.Info("Предпросмотр копирования не построен: " + Error.Title, isProblem: true);
             }
             finally
             {

@@ -8,20 +8,36 @@
             копирование выбранного (с подтверждением), ход работы с остановкой, итог.
          Источник не меняется никогда; в приёмнике трогаются только копии, созданные программой.
          Разметка страницы — та же, что у «Очистки» (FillPanel в прокрутке): список занимает свободное место. -->
-    <ScrollViewer x:Name="CopyScroll" Padding="20,14" Focusable="False"
+    <ScrollViewer x:Name="CopyScroll" Padding="20,10" Focusable="False"
                   VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
         <views:FillPanel x:Name="CopyContent" ViewportHeight="{Binding ViewportHeight, ElementName=CopyScroll}">
 
             <!-- Шаг 1. Откуда, куда, за какой период -->
             <Border Style="{StaticResource Card}">
                 <StackPanel>
-                    <!-- Заголовок и «куда» — одной строкой: приёмник один, выбирается кнопкой «Приёмник…» вверху окна. -->
+                    <!-- Заголовок и «куда» — одной строкой: приёмник один, меняется ссылкой рядом или в «Учётных записях». -->
                     <WrapPanel Margin="0,0,0,4">
                         <TextBlock Style="{StaticResource SectionText}" Text="1. Откуда и куда" Margin="0,0,20,4" VerticalAlignment="Center" />
-                        <TextBlock VerticalAlignment="Center" Margin="0,0,0,4" TextWrapping="Wrap"
-                                   ToolTip="Приёмник — кнопка «Приёмник…» вверху окна. Программа работает только со своими копиями, ваши события остаются как есть.">
+                        <TextBlock VerticalAlignment="Center" Margin="0,0,10,4" TextWrapping="Wrap"
+                                   ToolTip="Приёмник — куда копировать. Программа работает только со своими копиями, ваши события остаются как есть.">
                             <Run Text="Куда:" Foreground="{DynamicResource MutedTextBrush}" /> <Run Text="{Binding TargetLabel, Mode=OneWay}" FontWeight="SemiBold" />
                         </TextBlock>
+                        <Button VerticalAlignment="Center" Margin="0,0,0,4"
+                                Command="{Binding DataContext.EditConnectionCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                Visibility="{Binding DataContext.CanEditConnections, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource VisibleWhen}}"
+                                AutomationProperties.AutomationId="EditTargetButton"
+                                ToolTip="Сервер Exchange по EWS, ящик, учётная запись, пароль, часовой пояс календаря приёмника">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource LinkButton}">
+                                    <Setter Property="Content" Value="изменить…" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding HasTarget}" Value="False">
+                                            <Setter Property="Content" Value="настроить…" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
                     </WrapPanel>
 
                     <Grid IsEnabled="{Binding IsIdle}">
@@ -76,9 +92,26 @@
                             <WrapPanel Margin="0,2,0,0">
                                 <RadioButton GroupName="Source" IsChecked="{Binding UseEws}" Content="_Сервер по EWS:" Margin="0,0,8,0"
                                              VerticalAlignment="Center" AutomationProperties.AutomationId="SourceEws"
-                                             ToolTip="Календарь на другом сервере Exchange — подключение «Источник (EWS)…» вверху окна" />
-                                <TextBlock VerticalAlignment="Center" TextWrapping="Wrap" Text="{Binding EwsSourceLabel}"
+                                             ToolTip="Календарь на другом сервере Exchange — подключение «Источник по EWS» (ссылка рядом или «Учётные записи…» вверху окна)" />
+                                <TextBlock VerticalAlignment="Center" TextWrapping="Wrap" Text="{Binding EwsSourceLabel}" Margin="0,0,10,0"
                                            Foreground="{DynamicResource MutedTextBrush}" />
+                                <!-- Ссылка доступна и при выбранном Outlook: настроить источник можно заранее. -->
+                                <Button VerticalAlignment="Center"
+                                        Command="{Binding DataContext.EditSourceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                        Visibility="{Binding DataContext.CanEditSource, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource VisibleWhen}}"
+                                        AutomationProperties.AutomationId="EditSourceButton"
+                                        ToolTip="Другой сервер Exchange по EWS, откуда копировать: адрес, ящик, учётная запись, пароль">
+                                    <Button.Style>
+                                        <Style TargetType="Button" BasedOn="{StaticResource LinkButton}">
+                                            <Setter Property="Content" Value="изменить…" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding HasEwsSource}" Value="False">
+                                                    <Setter Property="Content" Value="настроить…" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                </Button>
                             </WrapPanel>
                         </StackPanel>
 
@@ -141,7 +174,7 @@
                         </Grid.ColumnDefinitions>
                         <StackPanel VerticalAlignment="Center">
                             <!-- Состояние автокопирования: когда следующее и чем кончилось последнее. -->
-                            <TextBlock TextWrapping="Wrap" FontSize="13" DataContext="{Binding Auto}"
+                            <TextBlock TextWrapping="Wrap" FontSize="14" DataContext="{Binding Auto}"
                                        Visibility="{Binding StatusText, Converter={StaticResource VisibleWhen}}"
                                        views:Announce.Text="{Binding StatusText}" AutomationProperties.AutomationId="AutoStatus">
                                 <TextBlock.Style>
@@ -214,7 +247,7 @@
                         </Style>
                     </Border.Style>
                     <StackPanel>
-                        <TextBlock FontWeight="SemiBold" FontSize="16" TextWrapping="Wrap"
+                        <TextBlock FontWeight="SemiBold" FontSize="17" TextWrapping="Wrap"
                                    views:Announce.Text="{Binding ResultTitle}" AutomationProperties.LiveSetting="Polite" />
                         <TextBox IsReadOnly="True" TextWrapping="Wrap" Margin="0,4,0,0" BorderThickness="0" Background="Transparent"
                                  Padding="0" MinHeight="0" MaxHeight="240" VerticalScrollBarVisibility="Auto"
@@ -225,7 +258,7 @@
             </StackPanel>
 
             <!-- Шаг 2. Что будет сделано; внизу карточки — копирование выбранного. -->
-            <Border Style="{StaticResource Card}" Margin="0" views:FillPanel.Fill="True" MinHeight="300"
+            <Border Style="{StaticResource Card}" Margin="0" views:FillPanel.Fill="True" MinHeight="280"
                     Visibility="{Binding HasPreview, Converter={StaticResource VisibleWhen}}">
                 <Grid>
                     <Grid.RowDefinitions>
@@ -237,7 +270,7 @@
 
                     <WrapPanel>
                         <TextBlock Style="{StaticResource SectionText}" Margin="0,0,16,4" Text="2. Проверьте, что будет сделано" />
-                        <TextBlock FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,4"
+                        <TextBlock FontSize="17" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,4"
                                    views:Announce.Text="{Binding Summary}" AutomationProperties.LiveSetting="Polite" />
                     </WrapPanel>
 

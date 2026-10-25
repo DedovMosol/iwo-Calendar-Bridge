@@ -20,7 +20,9 @@ namespace IwoBridge.Wpf.Tests
     ///  - нет ошибок привязок (опечатка в имени свойства в XAML молча оставила бы поле пустым);
     ///  - при любом размере окна от минимального до большого кнопки помещаются по ширине и достижимы, даты в полях
     ///    не обрезаны, таблица предпросмотра сохраняет виртуализацию (строится лишь видимая часть из 3 000 строк);
-    ///  - в большом окне страница не прокручивается — таблица занимает свободное место;
+    ///  - в большом окне с развёрнутой консолью и в окне по умолчанию со свёрнутой страница не прокручивается —
+    ///    таблица занимает свободное место (развёрнутая консоль в окне по умолчанию забирает место, и страница
+    ///    прокручивается, а таблица остаётся не меньше нескольких строк);
     ///  - буквы Alt-сокращений не повторяются, F5 и Esc связаны с командами;
     ///  - окна «Подключение» и «Подтвердите удаление» на маленьком экране не теряют кнопок;
     ///  - каждая кисть палитры имеет замену для высокой контрастности.
@@ -72,7 +74,7 @@ namespace IwoBridge.Wpf.Tests
                         DataGrid grid = Visuals.All<DataGrid>(window).Single(g => g.IsVisible);
                         // Даже в минимальном окне: заголовок колонок и не меньше трёх строк по 28 единиц.
                         Assert.True(grid.ActualHeight >= 120, $"таблица {grid.ActualHeight}");
-                        if (height >= 780)
+                        if (height >= 1000)
                         {
                             Assert.True(grid.ActualHeight >= 160, $"в большом окне таблица мала: {grid.ActualHeight}");
                         }
@@ -84,7 +86,7 @@ namespace IwoBridge.Wpf.Tests
                             Assert.True(box.ExtentWidth <= box.ViewportWidth + 0.5, $"дата обрезана: «{box.Text}»");
                         }
 
-                        if (height >= 780)
+                        if (height >= 1000)
                         {
                             string parts = string.Join(", ", ((Panel)content).Children.OfType<FrameworkElement>().Select(c => c.ActualHeight.ToString("0")));
                             Assert.True(page.ScrollableHeight == 0, $"страница прокручивается на {page.ScrollableHeight:0} при видимой высоте {page.ViewportHeight:0}; части: {parts}");
@@ -109,6 +111,7 @@ namespace IwoBridge.Wpf.Tests
                 var dialogs = new FakeDialogs();
                 var vm = new MainViewModel(new IwoBridge.Wpf.Services.DemoSession(DateTime.Today, TimeSpan.FromHours(3)), dialogs);
                 vm.Operation = MainOperation.Cleanup; // вкладка «Очистка» (по умолчанию открыто «Копирование»)
+                vm.Console.IsExpanded = false; // консоль свёрнута — место только у страницы
                 var window = new MainWindow(vm, dialogs);
                 try
                 {

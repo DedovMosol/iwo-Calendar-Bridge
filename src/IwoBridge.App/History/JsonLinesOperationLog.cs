@@ -85,7 +85,7 @@ namespace IwoBridge.App.History
         }
 
         /// <summary>Сообщения о ходе работы в файл не пишутся (журнал — итоги операций).</summary>
-        public void Info(string message)
+        public void Info(string message, bool isProblem = false)
         {
         }
 

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Text;
 
 namespace IwoBridge.App.History
@@ -20,17 +21,86 @@ namespace IwoBridge.App.History
         /// <summary>Записать законченную операцию.</summary>
         void Record(OperationRecord record);
 
-        /// <summary>Сообщение о ходе работы (начало операции) — для консоли; в журнал не пишется.</summary>
-        void Info(string message);
+        /// <summary>
+        /// Сообщение о ходе работы (начало операции, предпросмотр, Outlook, учётные записи) — для консоли; в журнал не
+        /// пишется. <paramref name="isProblem"/> — что-то не получилось: строка выделяется цветом.
+        /// </summary>
+        void Info(string message, bool isProblem = false);
 
         /// <summary>Последние операции, новые первыми.</summary>
         IReadOnlyList<OperationRecord> Recent(int max);
     }
 
+    /// <summary>Вид строки консоли — для цвета в панели окна.</summary>
+    public enum OperationLineKind
+    {
+        /// <summary>Ход работы.</summary>
+        Info,
+
+        /// <summary>Операция выполнена целиком.</summary>
+        Success,
+
+        /// <summary>Что-то не получилось.</summary>
+        Problem,
+
+        /// <summary>Операцию остановил человек.</summary>
+        Cancelled,
+
+        /// <summary>Подробность к строке выше (причина сбоя по событию).</summary>
+        Detail,
+    }
+
+    /// <summary>Строка консоли: текст как его видит человек и вид (для цвета).</summary>
+    public sealed class OperationLine
+    {
+        public OperationLine(OperationLineKind kind, string text)
+        {
+            Kind = kind;
+            Text = text ?? string.Empty;
+        }
+
+        public OperationLineKind Kind { get; }
+
+        public string Text { get; }
+    }
+
     /// <summary>Строка журнала для человека (консоль): одно место формата (DRY).</summary>
     public static class OperationRecordText
     {
+        /// <summary>Сколько подробностей неуспешной операции выводится в консоль; все — в «Истории».</summary>
+        public const int ConsoleDetails = 10;
+
         private static readonly CultureInfo Russian = CultureInfo.GetCultureInfo("ru-RU");
+
+        /// <summary>Местное время строки консоли: «2026-10-25 14:30:05».</summary>
+        public static string Stamp(DateTime local) => local.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+
+        /// <summary>Строка хода работы: время и сообщение.</summary>
+        public static OperationLine InfoLine(DateTime local, string message, bool isProblem) =>
+            new OperationLine(isProblem ? OperationLineKind.Problem : OperationLineKind.Info, Stamp(local) + "  " + (message ?? string.Empty));
+
+        /// <summary>
+        /// Строки консоли о законченной операции: итог (<see cref="Line"/>) и, если что-то не так, первые
+        /// <see cref="ConsoleDetails"/> подробностей с отступом.
+        /// </summary>
+        public static IReadOnlyList<OperationLine> Lines(OperationRecord record)
+        {
+            var lines = new List<OperationLine> { new OperationLine(KindOf(record.Outcome), Line(record)) };
+            if (record.Outcome != OperationOutcome.Success)
+            {
+                foreach (string detail in record.Details.Take(ConsoleDetails))
+                {
+                    lines.Add(new OperationLine(OperationLineKind.Detail, "    " + detail.Replace("\n", "\n    ")));
+                }
+            }
+
+            return lines;
+        }
+
+        private static OperationLineKind KindOf(OperationOutcome outcome) =>
+            outcome == OperationOutcome.Success ? OperationLineKind.Success
+            : outcome == OperationOutcome.Cancelled ? OperationLineKind.Cancelled
+            : OperationLineKind.Problem;
 
         public static string KindName(OperationKind kind)
         {
@@ -134,7 +204,7 @@ namespace IwoBridge.App.History
         public static string Line(OperationRecord record)
         {
             var text = new StringBuilder();
-            text.Append(record.FinishedUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture))
+            text.Append(Stamp(record.FinishedUtc.ToLocalTime()))
                 .Append("  ").Append(KindName(record.Kind))
                 .Append("  ").Append(Route(record));
             if (record.Period.Length > 0)
@@ -142,10 +212,11 @@ namespace IwoBridge.App.History
                 text.Append("  [").Append(record.Period).Append(']');
             }
 
-            text.Append("  создано ").Append(record.Created)
-                .Append(", перезаписано ").Append(record.Updated)
-                .Append(", удалено ").Append(record.Deleted)
-                .Append(", ошибок ").Append(record.Failed)
+            // Числа — с разделителем разрядов, как в окне («2 441»); в консоли Windows он становится пробелом (Plain).
+            text.Append("  создано ").Append(record.Created.ToString("N0", Russian))
+                .Append(", перезаписано ").Append(record.Updated.ToString("N0", Russian))
+                .Append(", удалено ").Append(record.Deleted.ToString("N0", Russian))
+                .Append(", ошибок ").Append(record.Failed.ToString("N0", Russian))
                 .Append("  — ").Append(OutcomeName(record.Outcome))
                 .Append(" (").Append(Duration(record.Duration)).Append(')');
             if (record.Outcome != OperationOutcome.Success && record.Title.Length > 0)
