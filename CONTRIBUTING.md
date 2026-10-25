@@ -35,6 +35,16 @@ dotnet test  IwoBridge.sln
 Новое поведение сопровождается тестами. После изменения `PackageReference` выполните
 `dotnet restore IwoBridge.sln` и закоммитьте lock-файлы.
 
+## Выпуск
+
+1. Версия в `Directory.Build.props` (`<Version>X.Y.Z</Version>`) и раздел `## X.Y.Z — …` в `docs/CHANGELOG.md`:
+   его текст станет описанием релиза.
+2. Коммит в `main`, CI зелёный.
+3. Тег версии: `git tag -a vX.Y.Z -m "iwo Calendar Bridge X.Y.Z"` и `git push origin vX.Y.Z`.
+
+`.github/workflows/release.yml` проверяет тег и журнал изменений, собирает и тестирует, упаковывает x64 и x86,
+считает `SHA256SUMS.txt` и публикует релиз. Версии 0.x публикуются как предварительные.
+
 ## Запросы на слияние
 
 Короткий заголовок, в описании — что изменено, как проверено и что осталось непроверенным (например, на

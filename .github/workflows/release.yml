@@ -1,0 +1,112 @@
+# Выпуск: по тегу vX.Y.Z собирает и проверяет программу так же, как CI, и публикует релиз GitHub с архивами x64 и
+# x86 и контрольными суммами SHA-256. Скачивания этих архивов считает GitHub (счётчики в README).
+#
+# Порядок выпуска (CONTRIBUTING.md): версия в Directory.Build.props, раздел «## X.Y.Z — …» в docs/CHANGELOG.md,
+# коммит в main, зелёный CI, затем тег: git tag -a vX.Y.Z -m "…" и git push origin vX.Y.Z.
+#   - Тег не совпадает с версией или в журнале изменений нет раздела этой версии — выпуск останавливается до
+#     публикации.
+#   - Версии 0.x публикуются как предварительные.
+# Действия закреплены на полный SHA, как в ci.yml. Релиз создаёт gh (он есть на раннере) с токеном этого запуска.
+
+name: Release
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+# Запись — только у этого workflow и только в содержимое репозитория (релиз и его файлы).
+permissions:
+  contents: write
+
+# Два запуска одного тега не публикуют релиз дважды: второй ждёт первый.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  DOTNET_NOLOGO: "true"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+  DOTNET_CLI_UI_LANGUAGE: en
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Имя тега — через переменную окружения, а не подстановкой в текст скрипта.
+      - name: Check tag, version and changelog
+        shell: pwsh
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          [xml]$props = Get-Content Directory.Build.props -Raw
+          $version = $props.SelectSingleNode('/Project/PropertyGroup/Version').InnerText.Trim()
+          if ($env:TAG -cne "v$version") { throw "Tag $env:TAG does not match product version v$version (Directory.Build.props)." }
+          $lines = Get-Content docs/CHANGELOG.md -Encoding utf8
+          $start = -1
+          for ($i = 0; $i -lt $lines.Count; $i++) {
+            if ($lines[$i] -match ('^## ' + [regex]::Escape($version) + '(\s|$)')) { $start = $i; break }
+          }
+          if ($start -lt 0) { throw "docs/CHANGELOG.md has no section '## $version'." }
+          $end = $lines.Count
+          for ($i = $start + 1; $i -lt $lines.Count; $i++) {
+            if ($lines[$i] -match '^## ') { $end = $i; break }
+          }
+          $notes = @($lines[($start + 1)..($end - 1)]) + @('') + @(Get-Content build/release-footer.md -Encoding utf8)
+          Set-Content -Path release-notes.md -Value $notes -Encoding utf8
+          "VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Setup .NET SDK 8
+        id: setup-dotnet
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 8.0.x
+          cache: true
+          cache-dependency-path: "**/packages.lock.json"
+
+      - name: Pin SDK for this run
+        shell: pwsh
+        run: dotnet new globaljson --sdk-version "${{ steps.setup-dotnet.outputs.dotnet-version }}" --force
+
+      - name: Restore (locked)
+        run: dotnet restore IwoBridge.sln --locked-mode
+
+      - name: Build
+        run: dotnet build IwoBridge.sln --configuration Release --no-restore -p:ContinuousIntegrationBuild=true
+
+      - name: Test
+        run: dotnet test IwoBridge.sln --configuration Release --no-build
+
+      - name: Package x86 and x64
+        shell: powershell
+        run: powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File build/package.ps1
+
+      # Формат sha256sum («хэш  имя»), хэш заглавными буквами — так его показывает Get-FileHash в Windows.
+      - name: Checksums
+        shell: pwsh
+        run: |
+          Push-Location artifacts
+          Get-ChildItem -Filter *.zip | Sort-Object Name |
+            ForEach-Object { '{0}  {1}' -f (Get-FileHash $_.Name -Algorithm SHA256).Hash, $_.Name } |
+            Set-Content -Path SHA256SUMS.txt -Encoding ascii
+          Get-Content SHA256SUMS.txt
+          Pop-Location
+
+      - name: Publish release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          $files = 'artifacts/iwo-Calendar-Bridge-x64.zip', 'artifacts/iwo-Calendar-Bridge-x86.zip', 'artifacts/SHA256SUMS.txt'
+          $options = @('--title', "iwo Calendar Bridge $env:VERSION", '--notes-file', 'release-notes.md', '--verify-tag')
+          if ($env:VERSION.StartsWith('0.')) { $options += '--prerelease' }
+          gh release create $env:TAG @files @options
+          if ($LASTEXITCODE -ne 0) { throw 'gh release create failed' }

@@ -4,7 +4,7 @@
 
 <br>
 
-[![CI](https://github.com/DedovMosol/iwo-Calendar-Bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/DedovMosol/iwo-Calendar-Bridge/actions/workflows/ci.yml) [![Release](https://img.shields.io/github/v/release/DedovMosol/iwo-Calendar-Bridge?include_prereleases&label=release&color=0F6CBD)](https://github.com/DedovMosol/iwo-Calendar-Bridge/releases/latest) [![Downloads](https://img.shields.io/github/downloads/DedovMosol/iwo-Calendar-Bridge/total?color=107C41)](https://github.com/DedovMosol/iwo-Calendar-Bridge/releases) [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE) [![Privacy: no telemetry](https://img.shields.io/badge/Privacy-no%20telemetry-5B4FBF)](docs/PRIVACY.md)
+[![CI](https://github.com/DedovMosol/iwo-Calendar-Bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/DedovMosol/iwo-Calendar-Bridge/actions/workflows/ci.yml) [![Release](https://img.shields.io/github/v/release/DedovMosol/iwo-Calendar-Bridge?label=release&color=0F6CBD)](https://github.com/DedovMosol/iwo-Calendar-Bridge/releases/latest) [![Downloads](https://img.shields.io/github/downloads/DedovMosol/iwo-Calendar-Bridge/total?label=downloads&color=107C41)](https://github.com/DedovMosol/iwo-Calendar-Bridge/releases) [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE) [![Privacy: no telemetry](https://img.shields.io/badge/Privacy-no%20telemetry-5B4FBF)](docs/PRIVACY.md)
 
 **Одностороннее копирование календаря Exchange: Outlook (MAPI/COM) или EWS → EWS. Инкрементальная синхронизация за период, серии с исключениями, вложения, описание с оформлением, автокопирование по расписанию. Очистка календаря по EWS с предпросмотром и манифестом. Exchange 2007 SP2…2013, Windows 7 SP1…11, x86/x64, portable.**
 
@@ -254,12 +254,17 @@ iwo Calendar Bridge — WPF-клиент (.NET Framework 4.8) для двух о
 
 ## ⬇️ Скачать
 
-| Архитектура | Архив |
-|----|----------|
-| **x64** — Windows 7 SP1 / 8.1 / 10 / 11 | [![Portable](https://img.shields.io/badge/Portable-x64-107C41?logo=windows&logoColor=white)](https://github.com/DedovMosol/iwo-Calendar-Bridge/releases/latest/download/iwo-Calendar-Bridge-x64.zip) |
-| **x86** — 32-битные Windows 7 SP1 / 8.1 / 10 (работает и на x64) | [![Portable](https://img.shields.io/badge/Portable-x86-107C41?logo=windows&logoColor=white)](https://github.com/DedovMosol/iwo-Calendar-Bridge/releases/latest/download/iwo-Calendar-Bridge-x86.zip) |
+| Архитектура | Архив | Скачиваний |
+|----|----------|----|
+| **x64** — Windows 7 SP1 / 8.1 / 10 / 11 | [![Portable](https://img.shields.io/badge/Portable-x64-107C41?logo=windows&logoColor=white)](https://github.com/DedovMosol/iwo-Calendar-Bridge/releases/latest/download/iwo-Calendar-Bridge-x64.zip) | [![x64](https://img.shields.io/github/downloads/DedovMosol/iwo-Calendar-Bridge/latest/iwo-Calendar-Bridge-x64.zip?label=x64&color=107C41)](https://github.com/DedovMosol/iwo-Calendar-Bridge/releases/latest) |
+| **x86** — 32-битные Windows 7 SP1 / 8.1 / 10 (работает и на x64) | [![Portable](https://img.shields.io/badge/Portable-x86-107C41?logo=windows&logoColor=white)](https://github.com/DedovMosol/iwo-Calendar-Bridge/releases/latest/download/iwo-Calendar-Bridge-x86.zip) | [![x86](https://img.shields.io/github/downloads/DedovMosol/iwo-Calendar-Bridge/latest/iwo-Calendar-Bridge-x86.zip?label=x86&color=107C41)](https://github.com/DedovMosol/iwo-Calendar-Bridge/releases/latest) |
 
-Все артефакты — на [странице релизов](https://github.com/DedovMosol/iwo-Calendar-Bridge/releases/latest).
+[![Последняя версия](https://img.shields.io/github/downloads/DedovMosol/iwo-Calendar-Bridge/latest/total?label=%D0%BF%D0%BE%D1%81%D0%BB%D0%B5%D0%B4%D0%BD%D1%8F%D1%8F%20%D0%B2%D0%B5%D1%80%D1%81%D0%B8%D1%8F&color=0F6CBD)](https://github.com/DedovMosol/iwo-Calendar-Bridge/releases/latest) [![Всего](https://img.shields.io/github/downloads/DedovMosol/iwo-Calendar-Bridge/total?label=%D0%B2%D1%81%D0%B5%D0%B3%D0%BE%20%D1%81%D0%BA%D0%B0%D1%87%D0%B8%D0%B2%D0%B0%D0%BD%D0%B8%D0%B9&color=107C41)](https://github.com/DedovMosol/iwo-Calendar-Bridge/releases)
+
+Счётчики ведёт GitHub по скачиваниям архивов со страницы релизов. Значки обновляются с задержкой: их кэширует
+shields.io. Все файлы выпуска — на [странице релизов](https://github.com/DedovMosol/iwo-Calendar-Bridge/releases/latest):
+архивы и `SHA256SUMS.txt`. Проверка архива: `Get-FileHash .\iwo-Calendar-Bridge-x64.zip -Algorithm SHA256`,
+значение должно совпасть со строкой архива в `SHA256SUMS.txt`.
 Распакуйте архив в каталог с правом записи (не `Program Files`). Каталоги `config\`, `manifests\` и `logs\`
 создаются рядом с `IwoCalendarBridge.exe`. Сборки x64 и x86 функционально одинаковы, разрядность Outlook
 значения не имеет (COM out-of-process).
@@ -399,6 +404,9 @@ powershell -ExecutionPolicy Bypass -File build\package.ps1   # artifacts\iwo-Cal
   `IWO_LIVE_MAILBOX`, `IWO_LIVE_PIN`) и `IWO_LIVE_OUTLOOK=1`. Запись идёт во временную папку календаря,
   которая затем удаляется. Outlook только читается, в вывод попадают только счётчики.
 - **CI** (`.github/workflows/ci.yml`, push и PR): `restore --locked-mode`, Release, тесты, упаковка x86 и x64.
+- **Выпуск** (`.github/workflows/release.yml`, тег `vX.Y.Z`): проверка, что тег совпадает с версией в
+  `Directory.Build.props` и в `docs/CHANGELOG.md` есть раздел этой версии, затем те же сборка и тесты, упаковка,
+  `SHA256SUMS.txt` и релиз GitHub с текстом из журнала изменений.
 - **Lock-файлы**: `packages.lock.json` в каждом проекте. После изменения `PackageReference` выполните
   `dotnet restore IwoBridge.sln` и закоммитьте lock-файлы.
 
@@ -415,7 +423,8 @@ powershell -ExecutionPolicy Bypass -File build\package.ps1   # artifacts\iwo-Cal
 | Копирование: Outlook → EWS | Готово. Live-тест: общий календарь из Outlook (сотни событий, серии, вложения, оформление) → Exchange 2007 SP2, повторный план пуст |
 | Копирование: источник EWS | Готово, покрыто тестами маппинга, live-чтение проверено |
 | Автокопирование, область уведомлений, справка | Готово, покрыто тестами |
-| Стабилизация | Длительные прогоны и приёмка на рабочих установках |
+| Категории событий, период «всё время» | Готово. Live-тест на Exchange 2007 SP2: категории события и повторений, их смена и снятие, предпросмотр за всё время |
+| Выпуск | 1.0.0 — первый стабильный выпуск: архивы x64 и x86 и `SHA256SUMS.txt`, публикуется по тегу |
 
 Изменения — [CHANGELOG.md](docs/CHANGELOG.md).
 
