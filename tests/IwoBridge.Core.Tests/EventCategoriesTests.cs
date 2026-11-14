@@ -127,5 +127,16 @@ namespace IwoBridge.Core.Tests
             Assert.Equal(new[] { "Выезд", "Красная категория", "Проект" }, used.Select(c => c.Name));
             Assert.Equal(new CategoryColor?[] { null, CategoryColor.Red, null }, used.Select(c => c.Color));
         }
+
+        [Fact]
+        public void ColorOf_PresetNames_ListWins()
+        {
+            Assert.Equal(CategoryColor.Red, EventCategories.ColorOf("Красная категория"));
+            Assert.Equal(CategoryColor.Blue, EventCategories.ColorOf("Blue Category"));
+            Assert.Null(EventCategories.ColorOf("Выезд"));
+            Assert.Equal(
+                CategoryColor.Olive,
+                EventCategories.ColorOf("Green", new Dictionary<string, CategoryColor>(StringComparer.OrdinalIgnoreCase) { ["Green"] = CategoryColor.Olive }));
+        }
     }
 }

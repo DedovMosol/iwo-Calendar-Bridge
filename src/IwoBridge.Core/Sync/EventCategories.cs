@@ -109,8 +109,49 @@ namespace IwoBridge.Core.Sync
             IEnumerable<string> names = items.SelectMany(i => i.Categories.Concat(i.Exceptions.SelectMany(e => e.Categories ?? Array.Empty<string>())));
             return Normalize(names)
                 .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
-                .Select(n => new EventCategory(n, colors != null && colors.TryGetValue(n, out CategoryColor color) ? color : (CategoryColor?)null))
+                .Select(n => new EventCategory(n, ColorOf(n, colors)))
                 .ToArray();
+        }
+
+        /// <summary>
+        /// Цвет для подсказки в превью: сначала список источника, иначе стандартное имя Outlook (EWS 2007 список
+        /// категорий ящика не отдаёт, палитру приёмника не пишем).
+        /// </summary>
+        public static CategoryColor? ColorOf(string name, IReadOnlyDictionary<string, CategoryColor>? colors = null)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                return null;
+            }
+
+            if (colors != null && colors.TryGetValue(name.Trim(), out CategoryColor fromList))
+            {
+                return fromList;
+            }
+
+            return Preset.TryGetValue(name.Trim(), out CategoryColor preset) ? preset : (CategoryColor?)null;
+        }
+
+        private static readonly Dictionary<string, CategoryColor> Preset = CreatePreset();
+
+        private static Dictionary<string, CategoryColor> CreatePreset()
+        {
+            var map = new Dictionary<string, CategoryColor>(StringComparer.OrdinalIgnoreCase);
+            void Add(CategoryColor color, params string[] names)
+            {
+                foreach (string n in names)
+                {
+                    map[n] = color;
+                }
+            }
+
+            Add(CategoryColor.Red, "Red", "Red Category", "Красный", "Красная категория");
+            Add(CategoryColor.Orange, "Orange", "Orange Category", "Оранжевый", "Оранжевая категория");
+            Add(CategoryColor.Yellow, "Yellow", "Yellow Category", "Жёлтый", "Желтый", "Жёлтая категория", "Желтая категория");
+            Add(CategoryColor.Green, "Green", "Green Category", "Зелёный", "Зеленый", "Зелёная категория", "Зеленая категория");
+            Add(CategoryColor.Blue, "Blue", "Blue Category", "Синий", "Синяя категория");
+            Add(CategoryColor.Purple, "Purple", "Purple Category", "Фиолетовый", "Лиловый", "Фиолетовая категория", "Лиловая категория");
+            return map;
         }
 
         /// <summary>Порядок для отпечатка: в нём порядок названий не важен.</summary>

@@ -324,7 +324,7 @@ namespace IwoBridge.Ews
                         {
                             try
                             {
-                                result[i] = Map(batch[i], appointment, series, occurrences);
+                                result[i] = Map(batch[i], appointment, series, occurrences, service);
                             }
 #pragma warning disable CA1031 // Непереносимое событие делает чтение неполным, но не обрывает его.
                             catch (Exception)
@@ -369,7 +369,11 @@ namespace IwoBridge.Ews
         }
 
         private static Mapped Map(
-            Brief brief, Appointment a, IReadOnlyDictionary<string, RecurrenceInfo> series, IReadOnlyDictionary<string, Appointment> occurrences)
+            Brief brief,
+            Appointment a,
+            IReadOnlyDictionary<string, RecurrenceInfo> series,
+            IReadOnlyDictionary<string, Appointment> occurrences,
+            ExchangeService service)
         {
             a.TryGetProperty(ItemSchema.Subject, out string subject);
             a.TryGetProperty(AppointmentSchema.Location, out string location);
@@ -378,17 +382,12 @@ namespace IwoBridge.Ews
             a.TryGetProperty(AppointmentSchema.LegacyFreeBusyStatus, out LegacyFreeBusyStatus busy);
             a.TryGetProperty(ItemSchema.Sensitivity, out Sensitivity sensitivity);
             IReadOnlyList<string> categories = Categories(a);
-            var attachments = new List<SyncAttachment>();
+            a.TryGetProperty(ItemSchema.Attachments, out AttachmentCollection files);
+            List<SyncAttachment> attachments = FilesOf(service, files, out int embedded);
             string? warning = null;
-            if (a.TryGetProperty(ItemSchema.Attachments, out AttachmentCollection files) && files != null)
+            if (embedded > 0)
             {
-                // Размер вложения EWS отдаёт начиная с Exchange 2010; для отпечатка хватает имени.
-                attachments.AddRange(files.OfType<FileAttachment>().Select(f => new SyncAttachment(f.Name, LengthOf(f))));
-                int embedded = files.OfType<ItemAttachment>().Count();
-                if (embedded > 0)
-                {
-                    warning = "«" + subject + "»: вложенные письма и события (" + embedded + ") в копию не переносятся, только файлы.";
-                }
+                warning = "«" + subject + "»: вложенные письма и события (" + embedded + ") в копию не переносятся, только файлы.";
             }
 
             RecurrenceRule? rule = null;
@@ -429,11 +428,8 @@ namespace IwoBridge.Ews
                             occurrenceRtf = null;
                         }
 
-                        var occAtt = new List<SyncAttachment>();
-                        if (changed.TryGetProperty(ItemSchema.Attachments, out AttachmentCollection occFiles) && occFiles != null)
-                        {
-                            occAtt.AddRange(occFiles.OfType<FileAttachment>().Select(f => new SyncAttachment(f.Name, LengthOf(f))));
-                        }
+                        changed.TryGetProperty(ItemSchema.Attachments, out AttachmentCollection occFiles);
+                        List<SyncAttachment> occAtt = FilesOf(service, occFiles, out _);
 
                         DateTime originalUtc = TimeMapper.ToUtc(occurrence.OriginalStart);
                         occKeys.Add((originalUtc.Ticks, occurrence.ItemId.UniqueId));
@@ -474,6 +470,69 @@ namespace IwoBridge.Ews
         /// Размер для отпечатка. На Exchange 2010+ EWS отдаёт Size; на 2007 свойство часто не загружено и бросает —
         /// тогда 0, в хеше остаётся имя. Содержимое всё равно копируется при записи.
         /// </summary>
+        private static List<SyncAttachment> FilesOf(ExchangeService service, AttachmentCollection? files, out int embedded)
+        {
+            embedded = 0;
+            var result = new List<SyncAttachment>();
+            if (files is null)
+            {
+                return result;
+            }
+
+            embedded = files.OfType<ItemAttachment>().Count();
+            FileAttachment[] list = files.OfType<FileAttachment>().ToArray();
+            if (list.Length == 0)
+            {
+                return result;
+            }
+
+            bool needHash = false;
+            foreach (FileAttachment file in list)
+            {
+                if (LengthOf(file) == 0)
+                {
+                    needHash = true;
+                    break;
+                }
+            }
+
+            if (needHash)
+            {
+                try
+                {
+                    ServiceResponseCollection<GetAttachmentResponse> responses = service.GetAttachments(
+                        list.Cast<Attachment>().ToArray(), null, Array.Empty<PropertyDefinitionBase>());
+                    foreach (GetAttachmentResponse response in responses)
+                    {
+                        if (response.Result == ServiceResult.Success && response.Attachment is FileAttachment got && got.Content != null)
+                        {
+                            result.Add(new SyncAttachment(got.Name, got.Content.Length, MapiRtf.Fingerprint(got.Content)));
+                        }
+                    }
+
+                    if (result.Count == list.Length)
+                    {
+                        return result;
+                    }
+
+                    result.Clear();
+                }
+#pragma warning disable CA1031
+                catch (Exception)
+#pragma warning restore CA1031
+                {
+                    result.Clear();
+                }
+            }
+
+            foreach (FileAttachment file in list)
+            {
+                result.Add(new SyncAttachment(file.Name, LengthOf(file)));
+            }
+
+            return result;
+        }
+
         private static long LengthOf(FileAttachment file)
         {
             try
