@@ -710,10 +710,11 @@ namespace IwoBridge.Outlook
             string body = (string)appointment.Body ?? string.Empty;
             try
             {
-                if ((int)appointment.BodyFormat == OlFormatHtml)
+                int format = (int)appointment.BodyFormat;
+                if (format == OlFormatHtml || string.IsNullOrWhiteSpace(body))
                 {
                     string html = (string)appointment.HTMLBody;
-                    if (!string.IsNullOrWhiteSpace(html))
+                    if (!string.IsNullOrWhiteSpace(html) && (format == OlFormatHtml || EventBody.LooksLikeHtml(html)))
                     {
                         return html;
                     }

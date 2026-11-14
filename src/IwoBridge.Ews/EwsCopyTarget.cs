@@ -174,6 +174,7 @@ namespace IwoBridge.Ews
             try
             {
                 await AddAttachmentsAsync(id, attachments, cancellationToken).ConfigureAwait(false);
+                await WriteBodyAsync(id, item.Body, item.RtfCompressed, cancellationToken).ConfigureAwait(false);
                 IReadOnlyList<string> remarks = item.Recurrence != null && item.Exceptions.Count > 0
                     ? await ApplyExceptionsAsync(id, item, clip, occurrenceAttachments, cancellationToken).ConfigureAwait(false)
                     : Array.Empty<string>();
@@ -237,6 +238,7 @@ namespace IwoBridge.Ews
                 },
                 cancellationToken).ConfigureAwait(false);
             await AddAttachmentsAsync(id, attachments, cancellationToken).ConfigureAwait(false);
+            await WriteBodyAsync(id, item.Body, item.RtfCompressed, cancellationToken).ConfigureAwait(false);
             await StampAsync(id, item.ContentHash, cancellationToken).ConfigureAwait(false);
             return Array.Empty<string>();
         }
@@ -313,6 +315,27 @@ namespace IwoBridge.Ews
         /// HTML — как HTML (OWA/новые Outlook, картинки cid:). Пустой текст при RTF не пишем: Exchange 2007 из
         /// пустого BodyType.Text собирает новое RTF и выкидывает оформление и \pict.
         /// </summary>
+
+        /// <summary>
+        /// Описание после вложений: иначе Exchange 2007 сохраняет HTML/cid до файлов и выкидывает картинки из тела.
+        /// </summary>
+        private Task WriteBodyAsync(ItemId id, string? body, byte[]? rtfCompressed, CancellationToken cancellationToken)
+        {
+            if (body is null && rtfCompressed is null)
+            {
+                return Task.CompletedTask;
+            }
+
+            return _write.RunAsync(
+                service =>
+                {
+                    Appointment appointment = Appointment.Bind(service, id, new PropertySet(BasePropertySet.IdOnly));
+                    ApplyBody(appointment, body, rtfCompressed);
+                    appointment.Update(ConflictResolutionMode.AlwaysOverwrite, SendInvitationsOrCancellationsMode.SendToNone);
+                },
+                cancellationToken);
+        }
+
         private static void ApplyBody(Appointment appointment, string? body, byte[]? rtfCompressed)
         {
             string text = body ?? string.Empty;
@@ -351,8 +374,6 @@ namespace IwoBridge.Ews
             (DateTime start, DateTime end) = EwsFieldMapper.TimesForWrite(startUtc, endUtc, item.IsAllDay, _calendarZone);
             appointment.Subject = item.Subject;
             appointment.Location = item.Location;
-            ApplyBody(appointment, item.Body, item.RtfCompressed);
-
             // Пояс события — пояс календаря приёмника. У новой копии он и так берётся из канала записи, а у
             // перезаписываемой (Bind) не загружен, и Exchange 2007 без него не меняет время (проверено вживую).
             appointment.StartTimeZone = _calendarZone;
@@ -451,6 +472,9 @@ namespace IwoBridge.Ews
                     continue;
                 }
 
+                string? subject = SourceException.IfDifferent(exception.Subject, item.Subject);
+                string? location = SourceException.IfDifferent(exception.Location, item.Location);
+                string? body = SourceException.IfDifferent(exception.Body, item.Body);
                 await _write.RunAsync(
                     service =>
                     {
@@ -460,10 +484,6 @@ namespace IwoBridge.Ews
                         occurrence.StartTimeZone = _calendarZone;
                         occurrence.Start = start;
                         occurrence.End = end;
-                        // null после IfDifferent — как у серии, поле не трогаем (иначе COM/EWS «Зал» затёрло бы RTF/наследование).
-                        string? subject = SourceException.IfDifferent(exception.Subject, item.Subject);
-                        string? location = SourceException.IfDifferent(exception.Location, item.Location);
-                        string? body = SourceException.IfDifferent(exception.Body, item.Body);
                         if (subject != null)
                         {
                             occurrence.Subject = subject;
@@ -474,10 +494,6 @@ namespace IwoBridge.Ews
                             occurrence.Location = location;
                         }
 
-                        if (body != null || exception.RtfCompressed != null)
-                        {
-                            ApplyBody(occurrence, body, exception.RtfCompressed);
-                        }
                         if (exception.IsPrivate)
                         {
                             occurrence.Sensitivity = Sensitivity.Private;
@@ -497,6 +513,11 @@ namespace IwoBridge.Ews
                     && files.Count > 0)
                 {
                     await AddAttachmentsAsync(occurrenceId, files, cancellationToken).ConfigureAwait(false);
+                }
+
+                if (body != null || exception.RtfCompressed != null)
+                {
+                    await WriteBodyAsync(occurrenceId, body, exception.RtfCompressed, cancellationToken).ConfigureAwait(false);
                 }
 
                 // Снять у одного повторения категории серии Exchange 2007 не даёт: удаление поля у повторения он отклоняет
