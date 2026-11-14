@@ -38,6 +38,9 @@ namespace IwoBridge.Ews
         /// <summary>Отпечаток недописанной копии: ни с одним событием не совпадает.</summary>
         private const string IncompleteHash = "incomplete";
 
+        /// <summary>Тот же потолок, что у <see cref="EwsCalendarGateway"/>: иначе CalendarView молча обрезает ответ.</summary>
+        private const int OccurrenceViewLimit = 1000;
+
         private readonly EwsChannel _read;
         private readonly EwsChannel _write;
         private readonly FolderId _calendar;
@@ -400,32 +403,7 @@ namespace IwoBridge.Ews
 
                 DateTime expected = ExpectedOccurrenceStart(exception.OriginalStartUtc, item.IsAllDay);
                 ItemId? occurrenceId = await _read.RunAsync(
-                    service =>
-                    {
-                        var view = new CalendarView(expected - OccurrencePick.SearchWindow, expected + OccurrencePick.SearchWindow)
-                        {
-                            PropertySet = new PropertySet(
-                                BasePropertySet.IdOnly,
-                                AppointmentSchema.Start,
-                                AppointmentSchema.ICalUid,
-                                AppointmentSchema.AppointmentType),
-                        };
-                        FindItemsResults<Appointment> found = service.FindAppointments(_calendar, view);
-                        var candidates = new OccurrencePick.Candidate[found.Items.Count];
-                        for (int i = 0; i < found.Items.Count; i++)
-                        {
-                            Appointment a = found.Items[i];
-                            a.TryGetProperty(AppointmentSchema.ICalUid, out string u);
-                            a.TryGetProperty(AppointmentSchema.Start, out DateTime start);
-                            bool series = !a.TryGetProperty(AppointmentSchema.AppointmentType, out AppointmentType type)
-                                || type == AppointmentType.Occurrence
-                                || type == AppointmentType.Exception;
-                            candidates[i] = new OccurrencePick.Candidate(u, TimeMapper.ToUtc(start), series);
-                        }
-
-                        int? index = OccurrencePick.IndexOf(candidates, seriesUid, expected, item.IsAllDay, _writeZone);
-                        return index is int at ? found.Items[at].Id : null;
-                    },
+                    service => FindOccurrenceId(service, seriesUid, expected, item.IsAllDay),
                     cancellationToken).ConfigureAwait(false);
 
                 if (occurrenceId is null)
@@ -528,6 +506,79 @@ namespace IwoBridge.Ews
                     return master.TryGetProperty(AppointmentSchema.ICalUid, out string value) ? value : null;
                 },
                 cancellationToken);
+        }
+
+        /// <summary>
+        /// Повторение своей серии в CalendarView. Без потолка и без проверки MoreAvailable Exchange 2007 обрезает
+        /// плотный день, IndexOf не находит вхождение, полный отпечаток всё равно ставится — правка больше не едет.
+        /// Обрезанный ответ дробим, из усечённого списка не выбираем.
+        /// </summary>
+        private ItemId? FindOccurrenceId(ExchangeService service, string seriesUid, DateTime expected, bool isAllDay)
+        {
+            return FindOccurrenceId(
+                service,
+                seriesUid,
+                expected,
+                isAllDay,
+                expected - OccurrencePick.SearchWindow,
+                expected + OccurrencePick.SearchWindow);
+        }
+
+        private ItemId? FindOccurrenceId(
+            ExchangeService service,
+            string seriesUid,
+            DateTime expected,
+            bool isAllDay,
+            DateTime windowStart,
+            DateTime windowEnd)
+        {
+            var view = new CalendarView(windowStart, windowEnd, OccurrenceViewLimit)
+            {
+                PropertySet = new PropertySet(
+                    BasePropertySet.IdOnly,
+                    AppointmentSchema.Start,
+                    AppointmentSchema.ICalUid,
+                    AppointmentSchema.AppointmentType),
+            };
+
+            FindItemsResults<Appointment>? found;
+            try
+            {
+                found = service.FindAppointments(_calendar, view);
+            }
+            catch (ServiceResponseException ex) when (ex.ErrorCode == ServiceError.ErrorExceededFindCountLimit)
+            {
+                found = null;
+            }
+
+            if (found != null && !found.MoreAvailable)
+            {
+                var candidates = new OccurrencePick.Candidate[found.Items.Count];
+                for (int i = 0; i < found.Items.Count; i++)
+                {
+                    Appointment a = found.Items[i];
+                    a.TryGetProperty(AppointmentSchema.ICalUid, out string u);
+                    a.TryGetProperty(AppointmentSchema.Start, out DateTime start);
+                    bool series = !a.TryGetProperty(AppointmentSchema.AppointmentType, out AppointmentType type)
+                        || type == AppointmentType.Occurrence
+                        || type == AppointmentType.Exception;
+                    candidates[i] = new OccurrencePick.Candidate(u, TimeMapper.ToUtc(start), series);
+                }
+
+                int? index = OccurrencePick.IndexOf(candidates, seriesUid, expected, isAllDay, _writeZone);
+                return index is int at ? found.Items[at].Id : null;
+            }
+
+            TimeSpan span = windowEnd - windowStart;
+            if (span <= TimeSpan.FromMinutes(15))
+            {
+                throw new InvalidOperationException(
+                    "В календаре приёмника слишком много событий в эти сутки, повторение серии не удалось прочитать целиком.");
+            }
+
+            DateTime mid = windowStart + TimeSpan.FromTicks(span.Ticks / 2);
+            return FindOccurrenceId(service, seriesUid, expected, isAllDay, windowStart, mid)
+                ?? FindOccurrenceId(service, seriesUid, expected, isAllDay, mid, windowEnd);
         }
 
         /// <summary>

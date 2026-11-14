@@ -48,6 +48,7 @@ namespace IwoBridge.Ews
             AppointmentSchema.Recurrence,
             AppointmentSchema.ModifiedOccurrences,
             AppointmentSchema.DeletedOccurrences,
+            ItemSchema.HasAttachments,
             MapiProperties.RtfCompressed)
         {
             RequestedBodyType = BodyType.Text,
@@ -61,6 +62,7 @@ namespace IwoBridge.Ews
             ItemSchema.Categories,
             AppointmentSchema.Location,
             ItemSchema.Attachments,
+            ItemSchema.HasAttachments,
             MapiProperties.RtfCompressed)
         {
             RequestedBodyType = BodyType.Text,
@@ -379,6 +381,7 @@ namespace IwoBridge.Ews
             IReadOnlyList<string> categories = Categories(a);
             a.TryGetProperty(ItemSchema.Attachments, out AttachmentCollection files);
             List<SyncAttachment> attachments = FilesOf(service, files, a.Id.UniqueId, out int embedded);
+            attachments = EnsureFiles(service, a, attachments, a.Id.UniqueId);
             string? warning = null;
             if (embedded > 0)
             {
@@ -425,6 +428,7 @@ namespace IwoBridge.Ews
 
                         changed.TryGetProperty(ItemSchema.Attachments, out AttachmentCollection occFiles);
                         List<SyncAttachment> occAtt = FilesOf(service, occFiles, occurrence.ItemId.UniqueId, out _);
+                        occAtt = EnsureFiles(service, changed, occAtt, occurrence.ItemId.UniqueId);
 
                         DateTime originalUtc = TimeMapper.ToUtc(occurrence.OriginalStart);
                         occKeys.Add((originalUtc.Ticks, occurrence.ItemId.UniqueId));
@@ -530,6 +534,72 @@ namespace IwoBridge.Ews
             foreach (FileAttachment file in list)
             {
                 result.Add(new SyncAttachment(file.Name, LengthOf(file)));
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// Exchange 2007 часто отдаёт HasAttachments=true при пустой коллекции у повторения. Без дочитывания
+        /// отпечаток не видит файлы, CopyRunner не качает, правка вложения больше не едет.
+        /// </summary>
+        private List<SyncAttachment> EnsureFiles(
+            ExchangeService service, Appointment item, List<SyncAttachment> listed, string itemId)
+        {
+            if (listed.Count > 0)
+            {
+                return listed;
+            }
+
+            if (!item.TryGetProperty(ItemSchema.HasAttachments, out bool has) || !has)
+            {
+                return listed;
+            }
+
+            return FetchFileMeta(service, itemId);
+        }
+
+        private List<SyncAttachment> FetchFileMeta(ExchangeService service, string itemId)
+        {
+            lock (_sync)
+            {
+                if (_fileCache.TryGetValue(itemId, out IReadOnlyList<AttachmentContent>? cached))
+                {
+                    return Meta(cached);
+                }
+            }
+
+            Item source = Item.Bind(service, new ItemId(itemId), new PropertySet(BasePropertySet.IdOnly, ItemSchema.Attachments));
+            FileAttachment[] files = source.Attachments.OfType<FileAttachment>().ToArray();
+            if (files.Length == 0)
+            {
+                RememberFiles(itemId, Array.Empty<AttachmentContent>());
+                return new List<SyncAttachment>();
+            }
+
+            ServiceResponseCollection<GetAttachmentResponse> responses = service.GetAttachments(
+                files.Cast<Attachment>().ToArray(), null, Array.Empty<PropertyDefinitionBase>());
+            var contents = new List<AttachmentContent>(files.Length);
+            foreach (GetAttachmentResponse response in responses)
+            {
+                if (response.Result != ServiceResult.Success || !(response.Attachment is FileAttachment file) || file.Content is null)
+                {
+                    return new List<SyncAttachment>();
+                }
+
+                contents.Add(new AttachmentContent(file.Name, file.Content, file.ContentId));
+            }
+
+            RememberFiles(itemId, contents);
+            return Meta(contents);
+        }
+
+        private static List<SyncAttachment> Meta(IReadOnlyList<AttachmentContent> contents)
+        {
+            var result = new List<SyncAttachment>(contents.Count);
+            foreach (AttachmentContent file in contents)
+            {
+                result.Add(new SyncAttachment(file.Name, file.Content.Length, MapiRtf.Fingerprint(file.Content)));
             }
 
             return result;

@@ -136,6 +136,7 @@ sequenceDiagram
   ID зон Windows). Описание — текст `Body` (OWA/EAS на Exchange 2007) и `PR_RTF_COMPRESSED` (`MapiRtf`: MELA или
   LZFu). Серия за период клипуется при записи (`RecurrenceClip`), отпечаток — по полному правилу источника.
   Вхождение исключения ищется в `CalendarView` (`OccurrencePick`: UID без регистра, не соседний single).
+  Ответ с `MoreAvailable` дробится, из усечённого списка вхождение не берётся.
   Если EWS не отдаёт Size вложения, содержимое качается уже при чтении для SHA и при записи берётся из кэша.
 - **Категории.** `SourceItem.Categories` — названия категорий события, `SourceException.Categories` — свои
   категории повторения (`null`, если они те же, что у серии). Источник Outlook читает многозначное
