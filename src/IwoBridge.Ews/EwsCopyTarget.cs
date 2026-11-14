@@ -339,7 +339,22 @@ namespace IwoBridge.Ews
         private static void ApplyBody(Appointment appointment, string? body, byte[]? rtfCompressed)
         {
             string text = body ?? string.Empty;
-            if (EventBody.LooksLikeHtml(text))
+            bool html = EventBody.LooksLikeHtml(text);
+
+            // Календарь Exchange 2007 хранит описание в RTF. HTML через EWS часто не остаётся. Есть RTF — оно главное.
+            if (rtfCompressed != null)
+            {
+                if (!html && text.Trim().Length > 0)
+                {
+                    appointment.Body = new MessageBody(BodyType.Text, text);
+                }
+
+                appointment.SetExtendedProperty(MapiProperties.RtfCompressed, rtfCompressed);
+                appointment.SetExtendedProperty(MapiProperties.RtfInSync, true);
+                return;
+            }
+
+            if (html)
             {
                 appointment.Body = new MessageBody(BodyType.HTML, text);
                 return;
@@ -349,15 +364,9 @@ namespace IwoBridge.Ews
             {
                 appointment.Body = new MessageBody(BodyType.Text, text);
             }
-            else if (body != null && rtfCompressed is null)
+            else if (body != null)
             {
                 appointment.Body = new MessageBody(BodyType.Text, string.Empty);
-            }
-
-            if (rtfCompressed != null)
-            {
-                appointment.SetExtendedProperty(MapiProperties.RtfCompressed, rtfCompressed);
-                appointment.SetExtendedProperty(MapiProperties.RtfInSync, true);
             }
         }
 
