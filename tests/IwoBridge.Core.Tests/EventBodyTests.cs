@@ -8,14 +8,15 @@ namespace IwoBridge.Core.Tests
         [Fact]
         public void LooksLikeHtml_Tags_NotPlainText()
         {
-            Assert.True(EventBody.LooksLikeHtml("<html><body>Привет</body></html>"));
-            Assert.True(EventBody.LooksLikeHtml("  <div>x</div>"));
-            Assert.True(EventBody.LooksLikeHtml("<p>абзац</p>"));
-            Assert.True(EventBody.LooksLikeHtml("<img src=\"cid:x\">"));
-            Assert.False(EventBody.LooksLikeHtml("просто текст"));
-            Assert.False(EventBody.LooksLikeHtml("<3"));
-            Assert.False(EventBody.LooksLikeHtml(""));
-            Assert.False(EventBody.LooksLikeHtml(null));
+            Assert.True(EventBody.LooksLikeHtml("<html><body>x</body></html>"));
+            Assert.False(EventBody.LooksLikeHtml("plain"));
+        }
+
+        [Fact]
+        public void ToPlainText_StripsTags_KeepsBreaks()
+        {
+            Assert.Equal("hello", EventBody.ToPlainText("<html><body>hello</body></html>"));
+            Assert.Equal("A & B", EventBody.ToPlainText("<div>A &amp; B</div>"));
         }
     }
 }

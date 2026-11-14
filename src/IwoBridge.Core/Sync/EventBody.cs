@@ -1,10 +1,11 @@
 using System;
+using System.Text;
 
 namespace IwoBridge.Core.Sync
 {
     /// <summary>
-    /// Текст описания события: обычный или HTML (OWA, новые Outlook, картинки cid:). Exchange 2007 принимает HTML
-    /// в <c>Body</c> и сам строит RTF, пустой текстовый Body при этом не шлём — иначе сервер затирает оформление.
+    /// Описание календаря: по [MS-OXCMAIL] встреча — RTF или обычный текст, не HTML как «лучшее» тело.
+    /// HTML из Outlook сводим к тексту для Body, оформление — в PR_RTF_COMPRESSED.
     /// </summary>
     public static class EventBody
     {
@@ -32,6 +33,76 @@ namespace IwoBridge.Core.Sync
                 || StartsWithTag(t, "font")
                 || StartsWithTag(t, "body")
                 || StartsWithTag(t, "img");
+        }
+
+        /// <summary>Текст для item:Body календаря: теги убраны, переносы из br/p/div сохранены.</summary>
+        public static string ToPlainText(string? text)
+        {
+            if (string.IsNullOrEmpty(text) || !LooksLikeHtml(text))
+            {
+                return text ?? string.Empty;
+            }
+
+            var sb = new StringBuilder(text!.Length);
+            bool inTag = false;
+            var tag = new StringBuilder();
+            for (int i = 0; i < text.Length; i++)
+            {
+                char c = text[i];
+                if (!inTag)
+                {
+                    if (c == '<')
+                    {
+                        inTag = true;
+                        tag.Clear();
+                    }
+                    else
+                    {
+                        sb.Append(c);
+                    }
+
+                    continue;
+                }
+
+                if (c == '>')
+                {
+                    inTag = false;
+                    string name = tag.ToString();
+                    int space = name.IndexOf(' ');
+                    if (space >= 0)
+                    {
+                        name = name.Substring(0, space);
+                    }
+
+                    name = name.TrimStart('/').ToLowerInvariant();
+                    if (name == "br" || name == "p" || name == "div" || name == "tr" || name == "li")
+                    {
+                        sb.Append('\n');
+                    }
+                }
+                else
+                {
+                    tag.Append(c);
+                }
+            }
+
+            return Unescape(sb.ToString()).Trim();
+        }
+
+        private static string Unescape(string value)
+        {
+            if (value.IndexOf('&') < 0)
+            {
+                return value;
+            }
+
+            return value
+                .Replace("&nbsp;", " ")
+                .Replace("&amp;", "&")
+                .Replace("&lt;", "<")
+                .Replace("&gt;", ">")
+                .Replace("&quot;", ((char)34).ToString())
+                .Replace("&apos;", "'");
         }
 
         private static bool StartsWithTag(string text, string name)
