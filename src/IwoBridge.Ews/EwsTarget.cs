@@ -67,7 +67,8 @@ namespace IwoBridge.Ews
             var factory = new ExchangeServiceFactory();
             _endpoints = profile.Endpoints.Select(e => new Endpoint(e)).ToArray();
             var retry = new RetryPolicy(EwsErrorMapper.MapException, EwsErrorMapper.ServerBackOff);
-            FolderId calendar = calendarFolder ?? EwsCalendarGateway.CalendarOf(profile.MailboxAddress);
+            FolderId mailboxCalendar = EwsCalendarGateway.CalendarOf(profile.MailboxAddress);
+            FolderId calendar = calendarFolder ?? mailboxCalendar;
 
             // Чтение — в UTC; запись событий — в поясе календаря ящика (CalendarZones). У обоих каналов те же
             // группы соединений адресов, поэтому и та же проверка сертификата.
@@ -82,8 +83,8 @@ namespace IwoBridge.Ews
             Calendar = new EwsCalendarGateway(read, calendar);
             CopyTarget = new EwsCopyTarget(read, write, calendar, Calendar, calendarZone);
             string mailbox = profile.MailboxAddress ?? credentials.UserName;
-            Source = new EwsSource(mailbox + " на " + ServerAddress.ToDisplay(profile.EwsUrl), read, calendar, Calendar);
-            WrittenCopies = new EwsSource("копии", read, calendar, Calendar, includeBridgeCopies: true);
+            Source = new EwsSource(mailbox + " на " + ServerAddress.ToDisplay(profile.EwsUrl), read, calendar, Calendar, mailboxCalendar: mailboxCalendar);
+            WrittenCopies = new EwsSource("копии", read, calendar, Calendar, includeBridgeCopies: true, mailboxCalendar: mailboxCalendar);
             foreach (Endpoint endpoint in _endpoints)
             {
                 TlsTrustRegistry.Register(endpoint.ConnectionGroup, endpoint.Validator);

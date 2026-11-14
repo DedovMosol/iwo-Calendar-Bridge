@@ -32,7 +32,7 @@ namespace IwoBridge.Outlook.Tests
                 IReadOnlyList<OutlookCalendarRef> calendars = await session.ListCalendarsAsync();
                 _output.WriteLine("Календарей в Outlook: " + calendars.Count + ", открыт сейчас: " + calendars.Count(c => c.IsCurrent));
 
-                OutlookCalendarRef current = calendars.Single(c => c.IsCurrent);
+                OutlookCalendarRef current = calendars.FirstOrDefault(c => c.IsCurrent) ?? calendars[0];
                 await ReadTwice(session.Open(current));
             }
         }

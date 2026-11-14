@@ -71,6 +71,7 @@ namespace IwoBridge.Ews
 
         private readonly EwsChannel _channel;
         private readonly FolderId _calendar;
+        private readonly FolderId _mailboxCalendar;
         private readonly EwsCalendarGateway _gateway;
         private readonly SearchFilter? _filter;
         private readonly object _sync = new object();
@@ -83,11 +84,12 @@ namespace IwoBridge.Ews
         private bool _mailboxColorsRead;
 
         /// <param name="includeBridgeCopies">Читать и копии моста — только для проверки записанного (живые тесты).</param>
-        internal EwsSource(string label, EwsChannel channel, FolderId calendar, EwsCalendarGateway gateway, bool includeBridgeCopies = false)
+        internal EwsSource(string label, EwsChannel channel, FolderId calendar, EwsCalendarGateway gateway, bool includeBridgeCopies = false, FolderId? mailboxCalendar = null)
         {
             Label = label;
             _channel = channel;
             _calendar = calendar;
+            _mailboxCalendar = mailboxCalendar ?? calendar;
             _gateway = gateway;
 
             // Копии, сделанные этой программой (источник сам чей-то приёмник), не читаются: при встречной настройке
@@ -649,26 +651,17 @@ namespace IwoBridge.Ews
                 {
                     try
                     {
-                        var view = new ItemView(100) { Traversal = ItemTraversal.Associated };
-                        view.PropertySet = new PropertySet(
+                        var properties = new PropertySet(
                             BasePropertySet.IdOnly, ItemSchema.ItemClass, ItemSchema.Subject, MapiProperties.RoamingXml);
-                        FindItemsResults<Item> found = service.FindItems(_calendar, view);
-                        foreach (Item item in found.Items)
+                        IReadOnlyDictionary<string, CategoryColor>? parsed = ColorsIn(service, _calendar, properties);
+                        if (parsed != null)
                         {
-                            string className = item.TryGetProperty(ItemSchema.ItemClass, out string cls) ? cls ?? string.Empty : string.Empty;
-                            if (className.IndexOf("CategoryList", StringComparison.OrdinalIgnoreCase) < 0)
-                            {
-                                continue;
-                            }
+                            return parsed;
+                        }
 
-                            if (item.TryGetProperty(MapiProperties.RoamingXml, out byte[] xml) && xml != null && xml.Length > 0)
-                            {
-                                IReadOnlyDictionary<string, CategoryColor> parsed = EventCategories.FromListXml(xml);
-                                if (parsed.Count > 0)
-                                {
-                                    return parsed;
-                                }
-                            }
+                        if (!ReferenceEquals(_calendar, _mailboxCalendar))
+                        {
+                            return ColorsIn(service, _mailboxCalendar, properties);
                         }
                     }
 #pragma warning disable CA1031 // Цвета — подсказка предпросмотра, копирование от них не зависит.
@@ -688,6 +681,43 @@ namespace IwoBridge.Ews
             }
 
             return colors;
+        }
+
+
+        private static IReadOnlyDictionary<string, CategoryColor>? ColorsIn(ExchangeService service, FolderId folder, PropertySet properties)
+        {
+            FindItemsResults<Item> found;
+            try
+            {
+                var view = new ItemView(100) { Traversal = ItemTraversal.Associated, PropertySet = properties };
+                found = service.FindItems(folder, view);
+            }
+#pragma warning disable CA1031
+            catch (Exception)
+#pragma warning restore CA1031
+            {
+                return null;
+            }
+
+            foreach (Item item in found.Items)
+            {
+                string className = item.TryGetProperty(ItemSchema.ItemClass, out string cls) ? cls ?? string.Empty : string.Empty;
+                if (className.IndexOf("CategoryList", StringComparison.OrdinalIgnoreCase) < 0)
+                {
+                    continue;
+                }
+
+                if (item.TryGetProperty(MapiProperties.RoamingXml, out byte[] xml) && xml != null && xml.Length > 0)
+                {
+                    IReadOnlyDictionary<string, CategoryColor> parsed = EventCategories.FromListXml(xml);
+                    if (parsed.Count > 0)
+                    {
+                        return parsed;
+                    }
+                }
+            }
+
+            return null;
         }
 
         private static List<SyncAttachment> Meta(IReadOnlyList<AttachmentContent> contents)

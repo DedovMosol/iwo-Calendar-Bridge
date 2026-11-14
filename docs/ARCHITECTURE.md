@@ -143,7 +143,8 @@ sequenceDiagram
   категории повторения (`null`, если они те же, что у серии). Источник Outlook читает многозначное
   `PidNameKeywords`, EWS — `item:Categories`. Цвета из списка категорий источника (`SourceRead.CategoryColors`)
   идут только в подсказку предпросмотра (`CopyPreview.Categories`). Источник EWS читает скрытый CategoryList
-  календаря (PR_ROAMING_XMLSTREAM), если сервер его отдаёт. Список категорий приёмника программа не меняет.
+  основной папки «Календарь» ящика (`PR_ROAMING_XMLSTREAM`, Associated), не подпапки источника.
+  Список категорий приёмника программа не меняет.
   В отпечаток категории входят, только если они есть.
 - **Период «всё время».** `CopySettings.AllTime` задаёт окно `TargetTimeZone.MinPeriodDate`…`MaxPeriodDate`.
   Чтение источника и приёмника перечисляет папку целиком и отбирает события по окну у себя, без `CalendarView`,
