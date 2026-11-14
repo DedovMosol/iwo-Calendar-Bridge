@@ -383,10 +383,6 @@ namespace IwoBridge.Ews
         {
             var remarks = new List<string>();
             string? uid = await ReadSeriesUidAsync(masterId, cancellationToken).ConfigureAwait(false);
-            if (string.IsNullOrEmpty(uid))
-            {
-                uid = await ReadSeriesUidAsync(masterId, cancellationToken).ConfigureAwait(false);
-            }
 
             // Без UID повторение своей серии не отличить от чужого события в то же время — а дальше удаление. Не рисковать.
             if (string.IsNullOrEmpty(uid))

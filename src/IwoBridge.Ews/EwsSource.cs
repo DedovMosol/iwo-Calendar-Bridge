@@ -74,6 +74,8 @@ namespace IwoBridge.Ews
         private Dictionary<string, string> _itemIdBySource = new Dictionary<string, string>(StringComparer.Ordinal);
         private Dictionary<string, Dictionary<long, string>> _occurrenceIds =
             new Dictionary<string, Dictionary<long, string>>(StringComparer.Ordinal);
+        private Dictionary<string, IReadOnlyList<AttachmentContent>> _fileCache =
+            new Dictionary<string, IReadOnlyList<AttachmentContent>>(StringComparer.Ordinal);
 
         /// <param name="includeBridgeCopies">Читать и копии моста — только для проверки записанного (живые тесты).</param>
         internal EwsSource(string label, EwsChannel channel, FolderId calendar, EwsCalendarGateway gateway, bool includeBridgeCopies = false)
@@ -98,6 +100,11 @@ namespace IwoBridge.Ews
             CancellationToken cancellationToken)
         {
             var referenced = new HashSet<string>(referencedSourceIds ?? Array.Empty<string>(), StringComparer.Ordinal);
+            lock (_sync)
+            {
+                _fileCache = new Dictionary<string, IReadOnlyList<AttachmentContent>>(StringComparer.Ordinal);
+            }
+
             (List<Brief> all, bool listed) = await ListAsync(cancellationToken).ConfigureAwait(false);
             string[] masters = all.Where(b => b.IsMaster).Select(b => b.ItemId).ToArray();
             IReadOnlyDictionary<string, RecurrenceInfo> series = await _gateway.LoadAsync(masters, cancellationToken).ConfigureAwait(false);
@@ -189,34 +196,7 @@ namespace IwoBridge.Ews
                 throw new InvalidOperationException("Событие источника не найдено среди прочитанных — постройте предпросмотр заново.");
             }
 
-            return _channel.RunAsync<IReadOnlyList<AttachmentContent>>(
-                service =>
-                {
-                    Item source = Item.Bind(service, new ItemId(itemId), new PropertySet(BasePropertySet.IdOnly, ItemSchema.Attachments));
-                    FileAttachment[] files = source.Attachments.OfType<FileAttachment>().ToArray();
-                    if (files.Length == 0)
-                    {
-                        return Array.Empty<AttachmentContent>();
-                    }
-
-                    // Все файлы события — одним запросом GetAttachment (Exchange 2007 SP1+), а не запросом на файл.
-                    ServiceResponseCollection<GetAttachmentResponse> responses = service.GetAttachments(
-                        files.Cast<Attachment>().ToArray(), null, Array.Empty<PropertyDefinitionBase>());
-                    var list = new List<AttachmentContent>(files.Length);
-                    foreach (GetAttachmentResponse response in responses)
-                    {
-                        if (response.Result != ServiceResult.Success || !(response.Attachment is FileAttachment file) || file.Content is null)
-                        {
-                            throw new InvalidOperationException(
-                                "Вложение события источника не прочиталось: " + (response.ErrorMessage ?? response.ErrorCode.ToString()) + ".");
-                        }
-
-                        list.Add(new AttachmentContent(file.Name, file.Content, file.ContentId));
-                    }
-
-                    return list;
-                },
-                cancellationToken);
+            return LoadFilesByItemIdAsync(itemId, cancellationToken);
         }
 
         public Task<IReadOnlyList<AttachmentContent>> LoadOccurrenceAttachmentsAsync(
@@ -249,9 +229,17 @@ namespace IwoBridge.Ews
             return LoadFilesByItemIdAsync(itemId, cancellationToken);
         }
 
-        private Task<IReadOnlyList<AttachmentContent>> LoadFilesByItemIdAsync(string itemId, CancellationToken cancellationToken)
+        private async Task<IReadOnlyList<AttachmentContent>> LoadFilesByItemIdAsync(string itemId, CancellationToken cancellationToken)
         {
-            return _channel.RunAsync<IReadOnlyList<AttachmentContent>>(
+            lock (_sync)
+            {
+                if (_fileCache.TryGetValue(itemId, out IReadOnlyList<AttachmentContent>? cached))
+                {
+                    return cached;
+                }
+            }
+
+            IReadOnlyList<AttachmentContent> list = await _channel.RunAsync<IReadOnlyList<AttachmentContent>>(
                 service =>
                 {
                     Item source = Item.Bind(service, new ItemId(itemId), new PropertySet(BasePropertySet.IdOnly, ItemSchema.Attachments));
@@ -263,7 +251,7 @@ namespace IwoBridge.Ews
 
                     ServiceResponseCollection<GetAttachmentResponse> responses = service.GetAttachments(
                         files.Cast<Attachment>().ToArray(), null, Array.Empty<PropertyDefinitionBase>());
-                    var list = new List<AttachmentContent>(files.Length);
+                    var loaded = new List<AttachmentContent>(files.Length);
                     foreach (GetAttachmentResponse response in responses)
                     {
                         if (response.Result != ServiceResult.Success || !(response.Attachment is FileAttachment file) || file.Content is null)
@@ -272,12 +260,19 @@ namespace IwoBridge.Ews
                                 "Вложение события источника не прочиталось: " + (response.ErrorMessage ?? response.ErrorCode.ToString()) + ".");
                         }
 
-                        list.Add(new AttachmentContent(file.Name, file.Content, file.ContentId));
+                        loaded.Add(new AttachmentContent(file.Name, file.Content, file.ContentId));
                     }
 
-                    return list;
+                    return loaded;
                 },
-                cancellationToken);
+                cancellationToken).ConfigureAwait(false);
+
+            lock (_sync)
+            {
+                _fileCache[itemId] = list;
+            }
+
+            return list;
         }
 
         private async Task<(List<Brief> Items, bool Complete)> ListAsync(CancellationToken cancellationToken)
@@ -368,7 +363,7 @@ namespace IwoBridge.Ews
             return found;
         }
 
-        private static Mapped Map(
+        private Mapped Map(
             Brief brief,
             Appointment a,
             IReadOnlyDictionary<string, RecurrenceInfo> series,
@@ -383,7 +378,7 @@ namespace IwoBridge.Ews
             a.TryGetProperty(ItemSchema.Sensitivity, out Sensitivity sensitivity);
             IReadOnlyList<string> categories = Categories(a);
             a.TryGetProperty(ItemSchema.Attachments, out AttachmentCollection files);
-            List<SyncAttachment> attachments = FilesOf(service, files, out int embedded);
+            List<SyncAttachment> attachments = FilesOf(service, files, a.Id.UniqueId, out int embedded);
             string? warning = null;
             if (embedded > 0)
             {
@@ -429,7 +424,7 @@ namespace IwoBridge.Ews
                         }
 
                         changed.TryGetProperty(ItemSchema.Attachments, out AttachmentCollection occFiles);
-                        List<SyncAttachment> occAtt = FilesOf(service, occFiles, out _);
+                        List<SyncAttachment> occAtt = FilesOf(service, occFiles, occurrence.ItemId.UniqueId, out _);
 
                         DateTime originalUtc = TimeMapper.ToUtc(occurrence.OriginalStart);
                         occKeys.Add((originalUtc.Ticks, occurrence.ItemId.UniqueId));
@@ -470,7 +465,11 @@ namespace IwoBridge.Ews
         /// Размер для отпечатка. На Exchange 2010+ EWS отдаёт Size; на 2007 свойство часто не загружено и бросает —
         /// тогда 0, в хеше остаётся имя. Содержимое всё равно копируется при записи.
         /// </summary>
-        private static List<SyncAttachment> FilesOf(ExchangeService service, AttachmentCollection? files, out int embedded)
+        private List<SyncAttachment> FilesOf(
+            ExchangeService service,
+            AttachmentCollection? files,
+            string? cacheKey,
+            out int embedded)
         {
             embedded = 0;
             var result = new List<SyncAttachment>();
@@ -502,16 +501,19 @@ namespace IwoBridge.Ews
                 {
                     ServiceResponseCollection<GetAttachmentResponse> responses = service.GetAttachments(
                         list.Cast<Attachment>().ToArray(), null, Array.Empty<PropertyDefinitionBase>());
+                    var contents = new List<AttachmentContent>(list.Length);
                     foreach (GetAttachmentResponse response in responses)
                     {
                         if (response.Result == ServiceResult.Success && response.Attachment is FileAttachment got && got.Content != null)
                         {
+                            contents.Add(new AttachmentContent(got.Name, got.Content, got.ContentId));
                             result.Add(new SyncAttachment(got.Name, got.Content.Length, MapiRtf.Fingerprint(got.Content)));
                         }
                     }
 
                     if (result.Count == list.Length)
                     {
+                        RememberFiles(cacheKey, contents);
                         return result;
                     }
 
@@ -531,6 +533,19 @@ namespace IwoBridge.Ews
             }
 
             return result;
+        }
+
+        private void RememberFiles(string? cacheKey, IReadOnlyList<AttachmentContent> contents)
+        {
+            if (string.IsNullOrEmpty(cacheKey))
+            {
+                return;
+            }
+
+            lock (_sync)
+            {
+                _fileCache[cacheKey!] = contents;
+            }
         }
 
         private static long LengthOf(FileAttachment file)
