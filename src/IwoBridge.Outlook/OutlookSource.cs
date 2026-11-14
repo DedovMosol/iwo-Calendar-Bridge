@@ -271,6 +271,118 @@ namespace IwoBridge.Outlook
                 cancellationToken);
         }
 
+        public Task<IReadOnlyList<AttachmentContent>> LoadOccurrenceAttachmentsAsync(
+            SourceItem item, SourceException occurrence, CancellationToken cancellationToken)
+        {
+            if (item is null)
+            {
+                throw new ArgumentNullException(nameof(item));
+            }
+
+            if (occurrence is null)
+            {
+                throw new ArgumentNullException(nameof(occurrence));
+            }
+
+            string? entryId;
+            string storeId;
+            lock (_sync)
+            {
+                _entryBySource.TryGetValue(item.SourceId, out entryId);
+                storeId = _storeId;
+            }
+
+            if (entryId is null)
+            {
+                throw new InvalidOperationException("Событие Outlook не найдено среди прочитанных — постройте предпросмотр заново.");
+            }
+
+            DateTime want = TimeZoneInfo.ConvertTimeFromUtc(occurrence.OriginalStartUtc, TimeZoneInfo.Local).Date;
+            return _session.RunAsync<IReadOnlyList<AttachmentContent>>(
+                ns =>
+                {
+                    var list = new List<AttachmentContent>();
+                    string temp = Path.Combine(Path.GetTempPath(), "iwo-attach-" + Guid.NewGuid().ToString("N"));
+                    dynamic? appointment = null, pattern = null, found = null, occItem = null, attachments = null;
+                    try
+                    {
+                        appointment = ns.GetItemFromID(entryId, storeId);
+                        pattern = appointment.GetRecurrencePattern();
+                        found = pattern.Exceptions;
+                        int count = (int)found.Count;
+                        for (int i = 1; i <= count; i++)
+                        {
+                            dynamic ex = found.Item(i);
+                            try
+                            {
+                                if ((bool)ex.Deleted)
+                                {
+                                    continue;
+                                }
+
+                                DateTime original = ((DateTime)ex.OriginalDate).Date;
+                                if (original != want)
+                                {
+                                    continue;
+                                }
+
+                                occItem = ex.AppointmentItem;
+                                break;
+                            }
+                            finally
+                            {
+                                Com.Release(ex);
+                            }
+                        }
+
+                        if (occItem is null)
+                        {
+                            return Array.Empty<AttachmentContent>();
+                        }
+
+                        attachments = occItem.Attachments;
+                        Directory.CreateDirectory(temp);
+                        int n = (int)attachments.Count;
+                        for (int i = 1; i <= n; i++)
+                        {
+                            dynamic attachment = attachments.Item(i);
+                            try
+                            {
+                                int type = (int)attachment.Type;
+                                if (IsCopied(type))
+                                {
+                                    string path = Path.Combine(temp, i.ToString(CultureInfo.InvariantCulture));
+                                    attachment.SaveAsFile(path);
+                                    list.Add(new AttachmentContent(
+                                        AttachmentName((string)attachment.FileName, type),
+                                        File.ReadAllBytes(path),
+                                        TryContentId((object)attachment)));
+                                    File.Delete(path);
+                                }
+                            }
+                            finally
+                            {
+                                Com.Release(attachment);
+                            }
+
+                            StaWorker.Touch();
+                        }
+                    }
+                    finally
+                    {
+                        Com.Release(attachments);
+                        Com.Release(occItem);
+                        Com.Release(found);
+                        Com.Release(pattern);
+                        Com.Release(appointment);
+                        DeleteQuietly(temp);
+                    }
+
+                    return list;
+                },
+                cancellationToken);
+        }
+
         private static void DeleteQuietly(string directory)
         {
             try
@@ -554,7 +666,8 @@ namespace IwoBridge.Outlook
                     occurrenceBody,
                     isPrivate: sensitivity == OlPrivate || sensitivity == OlConfidential,
                     categories: EventCategories.OfOccurrence(ReadCategories((object)changed), seriesCategories),
-                    rtfCompressed: rtf);
+                    rtfCompressed: rtf,
+                    attachments: ReadAttachments((object)changed, (string)changed.Subject, warnings));
             }
             finally
             {

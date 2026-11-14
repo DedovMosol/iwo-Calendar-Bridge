@@ -41,10 +41,12 @@ namespace IwoBridge.Core.Sync
             string? body = null,
             bool isPrivate = false,
             IEnumerable<string>? categories = null,
-            byte[]? rtfCompressed = null)
+            byte[]? rtfCompressed = null,
+            IEnumerable<SyncAttachment>? attachments = null)
         {
             OriginalStartUtc = TimeMapper.ToUtc(originalStartUtc);
             IsDeleted = isDeleted;
+            Attachments = Array.Empty<SyncAttachment>();
             if (!isDeleted)
             {
                 if (startUtc is null || endUtc is null)
@@ -60,6 +62,10 @@ namespace IwoBridge.Core.Sync
                 IsPrivate = isPrivate;
                 Categories = categories is null ? null : EventCategories.Normalize(categories);
                 RtfCompressed = rtfCompressed is null || rtfCompressed.Length == 0 ? null : rtfCompressed;
+                Attachments = (attachments ?? Array.Empty<SyncAttachment>())
+                    .OrderBy(a => a.Name, StringComparer.Ordinal)
+                    .ThenBy(a => a.Length)
+                    .ToArray();
             }
         }
 
@@ -97,6 +103,9 @@ namespace IwoBridge.Core.Sync
         public byte[]? RtfCompressed { get; }
 #pragma warning restore CA1819
 
+        /// <summary>Файлы этого повторения (не серии). Пусто — как у серии или нет своих. В отпечаток, только если есть.</summary>
+        public IReadOnlyList<SyncAttachment> Attachments { get; }
+
         /// <summary>
         /// Каноническая запись для отпечатка. Текстовые поля — с длиной впереди, отсутствие — отдельной меткой: иначе
         /// «a|b» + «c» и «a» + «b|c» давали бы одну запись, а очищенная тема не отличалась бы от отсутствующей.
@@ -117,7 +126,11 @@ namespace IwoBridge.Core.Sync
                   ? string.Empty
                   : "|categories:" + Categories.Count.ToString(CultureInfo.InvariantCulture)
                     + string.Concat(EventCategories.Ordered(Categories).Select(c => "|" + Field(c))))
-              + (RtfCompressed is null ? string.Empty : "|rtf:" + MapiRtf.Fingerprint(RtfCompressed));
+              + (RtfCompressed is null ? string.Empty : "|rtf:" + MapiRtf.Fingerprint(RtfCompressed))
+              + (Attachments.Count == 0
+                  ? string.Empty
+                  : "|att:" + Attachments.Count.ToString(CultureInfo.InvariantCulture)
+                    + string.Concat(Attachments.Select(a => "|" + Field(a.Name) + "|" + a.Length.ToString(CultureInfo.InvariantCulture) + "|" + Field(a.ContentSha256))));
 
         private static string Field(string? value) =>
             value is null ? "-" : value.Length.ToString(CultureInfo.InvariantCulture) + ":" + value;

@@ -141,11 +141,20 @@ namespace IwoBridge.Ews
         /// пропала) — у копии остаётся отпечаток «не дописано», и следующий запуск её перезапишет.
         /// </summary>
         public async Task<IReadOnlyList<string>> CreateAsync(
-            SourceItem item, IReadOnlyList<AttachmentContent> attachments, DateTime windowStartUtc, CancellationToken cancellationToken)
+            SourceItem item,
+            IReadOnlyList<AttachmentContent> attachments,
+            DateTime windowStartUtc,
+            IReadOnlyDictionary<long, IReadOnlyList<AttachmentContent>> occurrenceAttachments,
+            CancellationToken cancellationToken)
         {
             if (item is null)
             {
                 throw new ArgumentNullException(nameof(item));
+            }
+
+            if (occurrenceAttachments is null)
+            {
+                throw new ArgumentNullException(nameof(occurrenceAttachments));
             }
 
             RecurrenceClip.Write? clip = RecurrenceClip.ForWrite(item, windowStartUtc, _writeZone);
@@ -163,7 +172,7 @@ namespace IwoBridge.Ews
             {
                 await AddAttachmentsAsync(id, attachments, cancellationToken).ConfigureAwait(false);
                 IReadOnlyList<string> remarks = item.Recurrence != null && item.Exceptions.Count > 0
-                    ? await ApplyExceptionsAsync(id, item, clip, cancellationToken).ConfigureAwait(false)
+                    ? await ApplyExceptionsAsync(id, item, clip, occurrenceAttachments, cancellationToken).ConfigureAwait(false)
                     : Array.Empty<string>();
                 await StampAsync(id, item.ContentHash, cancellationToken).ConfigureAwait(false);
                 return remarks;
@@ -190,7 +199,12 @@ namespace IwoBridge.Ews
         }
 
         public async Task<IReadOnlyList<string>> UpdateAsync(
-            string copyItemId, SourceItem item, IReadOnlyList<AttachmentContent> attachments, DateTime windowStartUtc, CancellationToken cancellationToken)
+            string copyItemId,
+            SourceItem item,
+            IReadOnlyList<AttachmentContent> attachments,
+            DateTime windowStartUtc,
+            IReadOnlyDictionary<long, IReadOnlyList<AttachmentContent>> occurrenceAttachments,
+            CancellationToken cancellationToken)
         {
             if (item is null)
             {
@@ -201,7 +215,7 @@ namespace IwoBridge.Ews
             {
                 // Серия переписывается целиком: новая копия (правило, исключения, вложения), затем удаление прежней. В таком
                 // порядке сбой создания оставляет прежнюю копию, а сбой удаления — две копии, лишнюю уберёт следующий запуск.
-                IReadOnlyList<string> remarks = await CreateAsync(item, attachments, windowStartUtc, cancellationToken).ConfigureAwait(false);
+                IReadOnlyList<string> remarks = await CreateAsync(item, attachments, windowStartUtc, occurrenceAttachments, cancellationToken).ConfigureAwait(false);
                 await DeleteAsync(copyItemId, cancellationToken).ConfigureAwait(false);
                 return remarks;
             }
@@ -361,7 +375,11 @@ namespace IwoBridge.Ews
         ///  - Ошибка удаления повторения (DeleteItems сообщает её в ответе) — отказ.
         /// </summary>
         private async Task<IReadOnlyList<string>> ApplyExceptionsAsync(
-            ItemId masterId, SourceItem item, RecurrenceClip.Write? clip, CancellationToken cancellationToken)
+            ItemId masterId,
+            SourceItem item,
+            RecurrenceClip.Write? clip,
+            IReadOnlyDictionary<long, IReadOnlyList<AttachmentContent>> occurrenceAttachments,
+            CancellationToken cancellationToken)
         {
             var remarks = new List<string>();
             string? uid = await ReadSeriesUidAsync(masterId, cancellationToken).ConfigureAwait(false);
@@ -483,6 +501,12 @@ namespace IwoBridge.Ews
                         occurrence.Update(ConflictResolutionMode.AlwaysOverwrite, SendInvitationsOrCancellationsMode.SendToNone);
                     },
                     cancellationToken).ConfigureAwait(false);
+
+                if (occurrenceAttachments.TryGetValue(exception.OriginalStartUtc.Ticks, out IReadOnlyList<AttachmentContent> files)
+                    && files.Count > 0)
+                {
+                    await AddAttachmentsAsync(occurrenceId, files, cancellationToken).ConfigureAwait(false);
+                }
 
                 // Снять у одного повторения категории серии Exchange 2007 не даёт: удаление поля у повторения он отклоняет
                 // (ErrorInvalidPropertyDelete, и для item:Categories, и для расширенного свойства), а пустой список

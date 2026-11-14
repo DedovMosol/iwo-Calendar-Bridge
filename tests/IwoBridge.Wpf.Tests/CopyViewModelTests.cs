@@ -308,6 +308,9 @@ namespace IwoBridge.Wpf.Tests
 
             public Task<IReadOnlyList<AttachmentContent>> LoadAttachmentsAsync(SourceItem item, CancellationToken cancellationToken) =>
                 Task.FromResult<IReadOnlyList<AttachmentContent>>(Array.Empty<AttachmentContent>());
+
+            public Task<IReadOnlyList<AttachmentContent>> LoadOccurrenceAttachmentsAsync(SourceItem item, SourceException occurrence, CancellationToken cancellationToken) =>
+                Task.FromResult<IReadOnlyList<AttachmentContent>>(Array.Empty<AttachmentContent>());
         }
 
         [Fact]
@@ -488,6 +491,9 @@ namespace IwoBridge.Wpf.Tests
             }
 
             public Task<IReadOnlyList<AttachmentContent>> LoadAttachmentsAsync(SourceItem item, CancellationToken cancellationToken) =>
+                Task.FromResult<IReadOnlyList<AttachmentContent>>(Array.Empty<AttachmentContent>());
+
+            public Task<IReadOnlyList<AttachmentContent>> LoadOccurrenceAttachmentsAsync(SourceItem item, SourceException occurrence, CancellationToken cancellationToken) =>
                 Task.FromResult<IReadOnlyList<AttachmentContent>>(Array.Empty<AttachmentContent>());
         }
 

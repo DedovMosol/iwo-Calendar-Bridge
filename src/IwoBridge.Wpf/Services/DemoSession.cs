@@ -141,17 +141,26 @@ namespace IwoBridge.Wpf.Services
                 _inner.ReadOwnEventsAsync(windowStartUtc, windowEndUtc, cancellationToken);
 
             public async Task<IReadOnlyList<string>> CreateAsync(
-                SourceItem item, IReadOnlyList<AttachmentContent> attachments, DateTime windowStartUtc, CancellationToken cancellationToken)
+                SourceItem item,
+                IReadOnlyList<AttachmentContent> attachments,
+                DateTime windowStartUtc,
+                IReadOnlyDictionary<long, IReadOnlyList<AttachmentContent>> occurrenceAttachments,
+                CancellationToken cancellationToken)
             {
                 await Task.Delay(BatchDelay, CancellationToken.None).ConfigureAwait(false);
-                return await _inner.CreateAsync(item, attachments, windowStartUtc, cancellationToken).ConfigureAwait(false);
+                return await _inner.CreateAsync(item, attachments, windowStartUtc, occurrenceAttachments, cancellationToken).ConfigureAwait(false);
             }
 
             public async Task<IReadOnlyList<string>> UpdateAsync(
-                string copyItemId, SourceItem item, IReadOnlyList<AttachmentContent> attachments, DateTime windowStartUtc, CancellationToken cancellationToken)
+                string copyItemId,
+                SourceItem item,
+                IReadOnlyList<AttachmentContent> attachments,
+                DateTime windowStartUtc,
+                IReadOnlyDictionary<long, IReadOnlyList<AttachmentContent>> occurrenceAttachments,
+                CancellationToken cancellationToken)
             {
                 await Task.Delay(BatchDelay, CancellationToken.None).ConfigureAwait(false);
-                return await _inner.UpdateAsync(copyItemId, item, attachments, windowStartUtc, cancellationToken).ConfigureAwait(false);
+                return await _inner.UpdateAsync(copyItemId, item, attachments, windowStartUtc, occurrenceAttachments, cancellationToken).ConfigureAwait(false);
             }
 
             public async Task DeleteAsync(string copyItemId, CancellationToken cancellationToken)

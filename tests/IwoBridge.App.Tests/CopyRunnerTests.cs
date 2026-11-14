@@ -296,12 +296,21 @@ namespace IwoBridge.App.Tests
                 _inner.ReadOwnEventsAsync(windowStartUtc, windowEndUtc, cancellationToken);
 
             public Task<System.Collections.Generic.IReadOnlyList<string>> CreateAsync(
-                SourceItem item, System.Collections.Generic.IReadOnlyList<AttachmentContent> attachments, DateTime windowStartUtc, CancellationToken cancellationToken) =>
-                _inner.CreateAsync(item, attachments, windowStartUtc, cancellationToken);
+                SourceItem item,
+                System.Collections.Generic.IReadOnlyList<AttachmentContent> attachments,
+                DateTime windowStartUtc,
+                System.Collections.Generic.IReadOnlyDictionary<long, System.Collections.Generic.IReadOnlyList<AttachmentContent>> occurrenceAttachments,
+                CancellationToken cancellationToken) =>
+                _inner.CreateAsync(item, attachments, windowStartUtc, occurrenceAttachments, cancellationToken);
 
             public Task<System.Collections.Generic.IReadOnlyList<string>> UpdateAsync(
-                string copyItemId, SourceItem item, System.Collections.Generic.IReadOnlyList<AttachmentContent> attachments, DateTime windowStartUtc, CancellationToken cancellationToken) =>
-                _inner.UpdateAsync(copyItemId, item, attachments, windowStartUtc, cancellationToken);
+                string copyItemId,
+                SourceItem item,
+                System.Collections.Generic.IReadOnlyList<AttachmentContent> attachments,
+                DateTime windowStartUtc,
+                System.Collections.Generic.IReadOnlyDictionary<long, System.Collections.Generic.IReadOnlyList<AttachmentContent>> occurrenceAttachments,
+                CancellationToken cancellationToken) =>
+                _inner.UpdateAsync(copyItemId, item, attachments, windowStartUtc, occurrenceAttachments, cancellationToken);
 
             public Task DeleteAsync(string copyItemId, CancellationToken cancellationToken) =>
                 throw new InvalidOperationException("сервер не удалил элемент");

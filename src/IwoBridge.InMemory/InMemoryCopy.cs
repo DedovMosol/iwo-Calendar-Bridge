@@ -52,6 +52,15 @@ namespace IwoBridge.InMemory
             }
         }
 
+        /// <summary>Файлы изменённого повторения (ключ — исходное начало).</summary>
+        public void PutOccurrence(string sourceId, DateTime originalStartUtc, IReadOnlyList<AttachmentContent> attachments)
+        {
+            lock (_sync)
+            {
+                _attachments[sourceId + "\0" + originalStartUtc.Ticks.ToString(System.Globalization.CultureInfo.InvariantCulture)] = attachments;
+            }
+        }
+
         /// <summary>Удалить событие — имитация удаления в источнике.</summary>
         public void Remove(string sourceId)
         {
@@ -88,6 +97,18 @@ namespace IwoBridge.InMemory
             {
                 AttachmentLoads++;
                 return Task.FromResult(_attachments.TryGetValue(item.SourceId, out IReadOnlyList<AttachmentContent>? list)
+                    ? list
+                    : (IReadOnlyList<AttachmentContent>)Array.Empty<AttachmentContent>());
+            }
+        }
+
+        public Task<IReadOnlyList<AttachmentContent>> LoadOccurrenceAttachmentsAsync(
+            SourceItem item, SourceException occurrence, CancellationToken cancellationToken)
+        {
+            lock (_sync)
+            {
+                string key = item.SourceId + "\0" + occurrence.OriginalStartUtc.Ticks.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                return Task.FromResult(_attachments.TryGetValue(key, out IReadOnlyList<AttachmentContent>? list)
                     ? list
                     : (IReadOnlyList<AttachmentContent>)Array.Empty<AttachmentContent>());
             }
@@ -179,9 +200,14 @@ namespace IwoBridge.InMemory
         }
 
         public Task<IReadOnlyList<string>> CreateAsync(
-            SourceItem item, IReadOnlyList<AttachmentContent> attachments, DateTime windowStartUtc, CancellationToken cancellationToken)
+            SourceItem item,
+            IReadOnlyList<AttachmentContent> attachments,
+            DateTime windowStartUtc,
+            IReadOnlyDictionary<long, IReadOnlyList<AttachmentContent>> occurrenceAttachments,
+            CancellationToken cancellationToken)
         {
             _ = windowStartUtc;
+            _ = occurrenceAttachments;
             ThrowIfFails(item);
             lock (_sync)
             {
@@ -192,9 +218,15 @@ namespace IwoBridge.InMemory
         }
 
         public Task<IReadOnlyList<string>> UpdateAsync(
-            string copyItemId, SourceItem item, IReadOnlyList<AttachmentContent> attachments, DateTime windowStartUtc, CancellationToken cancellationToken)
+            string copyItemId,
+            SourceItem item,
+            IReadOnlyList<AttachmentContent> attachments,
+            DateTime windowStartUtc,
+            IReadOnlyDictionary<long, IReadOnlyList<AttachmentContent>> occurrenceAttachments,
+            CancellationToken cancellationToken)
         {
             _ = windowStartUtc;
+            _ = occurrenceAttachments;
             ThrowIfFails(item);
             lock (_sync)
             {

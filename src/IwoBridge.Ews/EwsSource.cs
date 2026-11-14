@@ -10,6 +10,7 @@ using IwoBridge.Core.Sync;
 using IwoBridge.Core.Time;
 using IwoBridge.Ews.Mapping;
 using TimeWindow = IwoBridge.Core.Time.TimeWindow;
+using Task = System.Threading.Tasks.Task;
 
 namespace IwoBridge.Ews
 {
@@ -59,6 +60,7 @@ namespace IwoBridge.Ews
             ItemSchema.Sensitivity,
             ItemSchema.Categories,
             AppointmentSchema.Location,
+            ItemSchema.Attachments,
             MapiProperties.RtfCompressed)
         {
             RequestedBodyType = BodyType.Text,
@@ -70,6 +72,8 @@ namespace IwoBridge.Ews
         private readonly SearchFilter? _filter;
         private readonly object _sync = new object();
         private Dictionary<string, string> _itemIdBySource = new Dictionary<string, string>(StringComparer.Ordinal);
+        private Dictionary<string, Dictionary<long, string>> _occurrenceIds =
+            new Dictionary<string, Dictionary<long, string>>(StringComparer.Ordinal);
 
         /// <param name="includeBridgeCopies">Читать и копии моста — только для проверки записанного (живые тесты).</param>
         internal EwsSource(string label, EwsChannel channel, FolderId calendar, EwsCalendarGateway gateway, bool includeBridgeCopies = false)
@@ -119,6 +123,7 @@ namespace IwoBridge.Ews
             var items = new List<SourceItem>(chosen.Length);
             var warnings = new List<string>();
             var ids = new Dictionary<string, string>(StringComparer.Ordinal);
+            var occIds = new Dictionary<string, Dictionary<long, string>>(StringComparer.Ordinal);
             int unreadable = 0;
             foreach (IReadOnlyList<Brief> batch in Batching.Chunk(chosen, BindBatch))
             {
@@ -129,6 +134,17 @@ namespace IwoBridge.Ews
                     {
                         items.Add(mapped.Item);
                         ids[mapped.Item.SourceId] = batch[i].ItemId;
+                        if (mapped.OccurrenceIds.Count > 0)
+                        {
+                            var inner = new Dictionary<long, string>();
+                            foreach ((long ticks, string id) in mapped.OccurrenceIds)
+                            {
+                                inner[ticks] = id;
+                            }
+
+                            occIds[mapped.Item.SourceId] = inner;
+                        }
+
                         if (mapped.Warning != null)
                         {
                             warnings.Add(mapped.Warning);
@@ -146,6 +162,7 @@ namespace IwoBridge.Ews
             lock (_sync)
             {
                 _itemIdBySource = ids;
+                _occurrenceIds = occIds;
             }
 
             string? incomplete = !listed
@@ -183,6 +200,67 @@ namespace IwoBridge.Ews
                     }
 
                     // Все файлы события — одним запросом GetAttachment (Exchange 2007 SP1+), а не запросом на файл.
+                    ServiceResponseCollection<GetAttachmentResponse> responses = service.GetAttachments(
+                        files.Cast<Attachment>().ToArray(), null, Array.Empty<PropertyDefinitionBase>());
+                    var list = new List<AttachmentContent>(files.Length);
+                    foreach (GetAttachmentResponse response in responses)
+                    {
+                        if (response.Result != ServiceResult.Success || !(response.Attachment is FileAttachment file) || file.Content is null)
+                        {
+                            throw new InvalidOperationException(
+                                "Вложение события источника не прочиталось: " + (response.ErrorMessage ?? response.ErrorCode.ToString()) + ".");
+                        }
+
+                        list.Add(new AttachmentContent(file.Name, file.Content, file.ContentId));
+                    }
+
+                    return list;
+                },
+                cancellationToken);
+        }
+
+        public Task<IReadOnlyList<AttachmentContent>> LoadOccurrenceAttachmentsAsync(
+            SourceItem item, SourceException occurrence, CancellationToken cancellationToken)
+        {
+            if (item is null)
+            {
+                throw new ArgumentNullException(nameof(item));
+            }
+
+            if (occurrence is null)
+            {
+                throw new ArgumentNullException(nameof(occurrence));
+            }
+
+            string? itemId = null;
+            lock (_sync)
+            {
+                if (_occurrenceIds.TryGetValue(item.SourceId, out Dictionary<long, string>? inner))
+                {
+                    inner.TryGetValue(occurrence.OriginalStartUtc.Ticks, out itemId);
+                }
+            }
+
+            if (itemId is null)
+            {
+                return Task.FromResult<IReadOnlyList<AttachmentContent>>(Array.Empty<AttachmentContent>());
+            }
+
+            return LoadFilesByItemIdAsync(itemId, cancellationToken);
+        }
+
+        private Task<IReadOnlyList<AttachmentContent>> LoadFilesByItemIdAsync(string itemId, CancellationToken cancellationToken)
+        {
+            return _channel.RunAsync<IReadOnlyList<AttachmentContent>>(
+                service =>
+                {
+                    Item source = Item.Bind(service, new ItemId(itemId), new PropertySet(BasePropertySet.IdOnly, ItemSchema.Attachments));
+                    FileAttachment[] files = source.Attachments.OfType<FileAttachment>().ToArray();
+                    if (files.Length == 0)
+                    {
+                        return Array.Empty<AttachmentContent>();
+                    }
+
                     ServiceResponseCollection<GetAttachmentResponse> responses = service.GetAttachments(
                         files.Cast<Attachment>().ToArray(), null, Array.Empty<PropertyDefinitionBase>());
                     var list = new List<AttachmentContent>(files.Length);
@@ -330,6 +408,7 @@ namespace IwoBridge.Ews
                 }
 
                 byte[]? seriesRtf = a.TryGetProperty(MapiProperties.RtfCompressed, out byte[] masterRtf) ? masterRtf : null;
+                var occKeys = new List<(long Ticks, string Id)>();
                 if (a.TryGetProperty(AppointmentSchema.ModifiedOccurrences, out OccurrenceInfoCollection modified) && modified != null)
                 {
                     foreach (OccurrenceInfo occurrence in modified)
@@ -350,32 +429,36 @@ namespace IwoBridge.Ews
                             occurrenceRtf = null;
                         }
 
+                        var occAtt = new List<SyncAttachment>();
+                        if (changed.TryGetProperty(ItemSchema.Attachments, out AttachmentCollection occFiles) && occFiles != null)
+                        {
+                            occAtt.AddRange(occFiles.OfType<FileAttachment>().Select(f => new SyncAttachment(f.Name, LengthOf(f))));
+                        }
+
+                        DateTime originalUtc = TimeMapper.ToUtc(occurrence.OriginalStart);
+                        occKeys.Add((originalUtc.Ticks, occurrence.ItemId.UniqueId));
                         exceptions.Add(new SourceException(
-                            TimeMapper.ToUtc(occurrence.OriginalStart), false, TimeMapper.ToUtc(occurrence.Start), TimeMapper.ToUtc(occurrence.End), s, l, b,
+                            originalUtc, false, TimeMapper.ToUtc(occurrence.Start), TimeMapper.ToUtc(occurrence.End), s, l, b,
                             isPrivate: occurrenceSensitivity == Sensitivity.Private || occurrenceSensitivity == Sensitivity.Confidential,
                             categories: EventCategories.OfOccurrence(Categories(changed), categories),
-                            rtfCompressed: occurrenceRtf));
+                            rtfCompressed: occurrenceRtf,
+                            attachments: occAtt));
                     }
                 }
+
+                return Finish(exceptions, occKeys);
             }
 
-            var item = new SourceItem(
-                brief.SourceId,
-                subject,
-                location,
-                body,
-                brief.Start,
-                brief.End,
-                allDay,
-                EwsFieldMapper.FromEws(busy),
-                EwsFieldMapper.FromEws(sensitivity),
-                rule,
-                seriesEnd,
-                exceptions,
-                attachments,
-                a.TryGetProperty(MapiProperties.RtfCompressed, out byte[] rtf) ? rtf : null,
-                categories);
-            return new Mapped(item, warning);
+            return Finish(exceptions, Array.Empty<(long, string)>());
+
+            Mapped Finish(List<SourceException> list, IReadOnlyList<(long Ticks, string Id)> keys)
+            {
+                var mappedItem = new SourceItem(
+                    brief.SourceId, subject, location, body, brief.Start, brief.End, allDay,
+                    EwsFieldMapper.FromEws(busy), EwsFieldMapper.FromEws(sensitivity), rule, seriesEnd, list, attachments,
+                    a.TryGetProperty(MapiProperties.RtfCompressed, out byte[] rtf) ? rtf : null, categories);
+                return new Mapped(mappedItem, warning, keys);
+            }
         }
 
         /// <summary>
@@ -407,15 +490,18 @@ namespace IwoBridge.Ews
 
         private sealed class Mapped
         {
-            public Mapped(SourceItem item, string? warning)
+            public Mapped(SourceItem item, string? warning, IReadOnlyList<(long Ticks, string Id)>? occurrenceIds = null)
             {
                 Item = item;
                 Warning = warning;
+                OccurrenceIds = occurrenceIds ?? Array.Empty<(long, string)>();
             }
 
             public SourceItem Item { get; }
 
             public string? Warning { get; }
+
+            public IReadOnlyList<(long Ticks, string Id)> OccurrenceIds { get; }
         }
 
         private sealed class Brief

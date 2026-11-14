@@ -57,6 +57,19 @@ namespace IwoBridge.Core.Tests
         }
 
         [Fact]
+        public void Canonical_AttachmentsOnlyWhenPresent()
+        {
+            SourceException plain = Modified("a", "b");
+            var withFile = new SourceException(
+                Original, false, Original.AddHours(1), Original.AddHours(2), "a", "b",
+                attachments: new[] { new SyncAttachment("a.txt", 3) });
+
+            Assert.DoesNotContain("|att:", plain.Canonical, StringComparison.Ordinal);
+            Assert.Contains("|att:", withFile.Canonical, StringComparison.Ordinal);
+            Assert.NotEqual(plain.Canonical, withFile.Canonical);
+        }
+
+        [Fact]
         public void Canonical_RtfOnlyWhenPresent_DoesNotChangePlainException()
         {
             SourceException plain = Modified("a", "b");

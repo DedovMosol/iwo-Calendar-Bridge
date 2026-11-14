@@ -74,6 +74,10 @@ namespace IwoBridge.Core.Sync
 
         /// <summary>Содержимое вложений события — только для того, что действительно копируется.</summary>
         Task<IReadOnlyList<AttachmentContent>> LoadAttachmentsAsync(SourceItem item, CancellationToken cancellationToken);
+
+        /// <summary>Файлы изменённого повторения (не серии). Нет своих — пустой список.</summary>
+        Task<IReadOnlyList<AttachmentContent>> LoadOccurrenceAttachmentsAsync(
+            SourceItem item, SourceException occurrence, CancellationToken cancellationToken);
     }
 
     /// <summary>
@@ -102,12 +106,21 @@ namespace IwoBridge.Core.Sync
         /// замечание показывается один раз. Пусто — перенесено всё.
         /// </returns>
         Task<IReadOnlyList<string>> CreateAsync(
-            SourceItem item, IReadOnlyList<AttachmentContent> attachments, DateTime windowStartUtc, CancellationToken cancellationToken);
+            SourceItem item,
+            IReadOnlyList<AttachmentContent> attachments,
+            DateTime windowStartUtc,
+            IReadOnlyDictionary<long, IReadOnlyList<AttachmentContent>> occurrenceAttachments,
+            CancellationToken cancellationToken);
 
         /// <summary>Сделать существующую копию равной событию; реализация может пересоздать её (серии).</summary>
         /// <returns>Замечания к записанной копии, как у <see cref="CreateAsync"/>.</returns>
         Task<IReadOnlyList<string>> UpdateAsync(
-            string copyItemId, SourceItem item, IReadOnlyList<AttachmentContent> attachments, DateTime windowStartUtc, CancellationToken cancellationToken);
+            string copyItemId,
+            SourceItem item,
+            IReadOnlyList<AttachmentContent> attachments,
+            DateTime windowStartUtc,
+            IReadOnlyDictionary<long, IReadOnlyList<AttachmentContent>> occurrenceAttachments,
+            CancellationToken cancellationToken);
 
         /// <summary>Удалить копию (в «Удалённые», без отмен участникам).</summary>
         Task DeleteAsync(string copyItemId, CancellationToken cancellationToken);

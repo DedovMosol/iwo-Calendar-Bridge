@@ -367,18 +367,25 @@ namespace IwoBridge.App.Copy
             remarks.AddRange(notes.Where(n => !string.IsNullOrWhiteSpace(n)).Select(n => "«" + subject + "»: " + n));
         }
 
+        private static readonly IReadOnlyDictionary<long, IReadOnlyList<AttachmentContent>> NoOccurrenceFiles =
+            new Dictionary<long, IReadOnlyList<AttachmentContent>>();
+
         private async Task<IReadOnlyList<string>> CreateAsync(CopyPreview preview, SyncAction action)
         {
             SourceItem item = preview.SourceItems[action.SourceId];
             IReadOnlyList<AttachmentContent> attachments = await LoadAttachmentsAsync(item).ConfigureAwait(false);
-            return await _target.CreateAsync(item, attachments, preview.WindowStartUtc, CancellationToken.None).ConfigureAwait(false);
+            IReadOnlyDictionary<long, IReadOnlyList<AttachmentContent>> occurrenceFiles =
+                await LoadOccurrenceAttachmentsAsync(item).ConfigureAwait(false);
+            return await _target.CreateAsync(item, attachments, preview.WindowStartUtc, occurrenceFiles, CancellationToken.None).ConfigureAwait(false);
         }
 
         private async Task<IReadOnlyList<string>> UpdateAsync(CopyPreview preview, SyncAction action)
         {
             SourceItem item = preview.SourceItems[action.SourceId];
             IReadOnlyList<AttachmentContent> attachments = await LoadAttachmentsAsync(item).ConfigureAwait(false);
-            return await _target.UpdateAsync(action.Copy!.ItemId, item, attachments, preview.WindowStartUtc, CancellationToken.None).ConfigureAwait(false);
+            IReadOnlyDictionary<long, IReadOnlyList<AttachmentContent>> occurrenceFiles =
+                await LoadOccurrenceAttachmentsAsync(item).ConfigureAwait(false);
+            return await _target.UpdateAsync(action.Copy!.ItemId, item, attachments, preview.WindowStartUtc, occurrenceFiles, CancellationToken.None).ConfigureAwait(false);
         }
 
         private Task<IReadOnlyList<AttachmentContent>> LoadAttachmentsAsync(SourceItem item)
@@ -386,6 +393,25 @@ namespace IwoBridge.App.Copy
             return item.Attachments.Count == 0
                 ? Task.FromResult<IReadOnlyList<AttachmentContent>>(Array.Empty<AttachmentContent>())
                 : _source.LoadAttachmentsAsync(item, CancellationToken.None);
+        }
+
+        private async Task<IReadOnlyDictionary<long, IReadOnlyList<AttachmentContent>>> LoadOccurrenceAttachmentsAsync(SourceItem item)
+        {
+            Dictionary<long, IReadOnlyList<AttachmentContent>>? map = null;
+            foreach (SourceException exception in item.Exceptions)
+            {
+                if (exception.IsDeleted || exception.Attachments.Count == 0)
+                {
+                    continue;
+                }
+
+                map ??= new Dictionary<long, IReadOnlyList<AttachmentContent>>();
+                map[exception.OriginalStartUtc.Ticks] = await _source
+                    .LoadOccurrenceAttachmentsAsync(item, exception, CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+
+            return map ?? NoOccurrenceFiles;
         }
     }
 }
