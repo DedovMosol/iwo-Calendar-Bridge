@@ -4,7 +4,6 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using IwoBridge.Core.Sync;
@@ -39,6 +38,12 @@ namespace IwoBridge.Outlook
         // разделителем списка Windows, а он может встретиться и в самом названии.
         private const string KeywordsProp = "http://schemas.microsoft.com/mapi/string/{00020329-0000-0000-C000-000000000046}/Keywords";
 
+        // PR_RTF_COMPRESSED — Outlook 2007 (RTFBody появился в 2010). Уже сжатый MS-OXRTFCP, не оборачивать MELA ещё раз.
+        private const string RtfCompressedProp = "http://schemas.microsoft.com/mapi/proptag/0x10090102";
+
+        // PR_ATTACH_CONTENT_ID — картинка в HTML (cid:). Exchange 2007 принимает ContentId у FileAttachment, IsInline — нет (2010+).
+        private const string AttachContentIdProp = "http://schemas.microsoft.com/mapi/proptag/0x3712001F";
+
         // Метка копии моста (то же именованное свойство, что пишет приёмник EWS: набор и имя — константы продукта).
         // Тип (0x001F — строка) указывается явно: именованное свойство из своего набора Outlook иначе не принимает.
         private const string BridgeMarkProp = "http://schemas.microsoft.com/mapi/string/{8E2B2E7A-0D2A-4E6E-9E8C-9C2B1A7F3D10}/IwoBridgeSourceId/0x0000001F";
@@ -46,6 +51,7 @@ namespace IwoBridge.Outlook
         // OlAttachmentType: файл, вложенное письмо или элемент (сохраняется как .msg), ссылка, объект OLE.
         private const int OlByValue = 1;
         private const int OlEmbeddedItem = 5;
+        private const int OlOLE = 6;
 
         // Запас при отборе по таблице: точное сравнение — по полям события.
         private static readonly TimeSpan Slack = TimeSpan.FromDays(1);
@@ -76,7 +82,8 @@ namespace IwoBridge.Outlook
         public string Label => "Outlook: " + _calendar.Label;
 
         /// <summary>Переносятся файлы и вложенные элементы; ссылки (файл не в событии) и объекты OLE — нет.</summary>
-        internal static bool IsCopied(int attachmentType) => attachmentType == OlByValue || attachmentType == OlEmbeddedItem;
+        internal static bool IsCopied(int attachmentType) =>
+            attachmentType == OlByValue || attachmentType == OlEmbeddedItem || attachmentType == OlOLE;
 
         /// <summary>
         /// Имя вложения в копии. Вложенное письмо или событие Outlook сохраняет в формате .msg — у копии оно с этим
@@ -85,14 +92,37 @@ namespace IwoBridge.Outlook
         internal static string AttachmentName(string? fileName, int attachmentType)
         {
             string name = string.IsNullOrWhiteSpace(fileName) ? "вложение" : fileName!.Trim();
-            return attachmentType == OlEmbeddedItem && !name.EndsWith(".msg", StringComparison.OrdinalIgnoreCase) ? name + ".msg" : name;
+            if (attachmentType == OlEmbeddedItem && !name.EndsWith(".msg", StringComparison.OrdinalIgnoreCase))
+            {
+                return name + ".msg";
+            }
+
+            if (attachmentType == OlOLE && name.IndexOf('.') < 0)
+            {
+                return name + ".bin";
+            }
+
+            return name;
         }
 
         /// <summary>Есть ли в RTF вставленная картинка (тогда описание переносится, даже если текста нет).</summary>
-        internal static bool ContainsPicture(byte[] rtf)
+        internal static bool ContainsPicture(byte[] rtf) => MapiRtf.HasPicture(rtf);
+
+        /// <summary>cid вложения без угловых скобок; пусто — обычный файл.</summary>
+        internal static string? NormalizeContentId(object? value)
         {
-            string text = Encoding.ASCII.GetString(rtf);
-            return text.IndexOf("\\pict", StringComparison.Ordinal) >= 0 || text.IndexOf("\\objdata", StringComparison.Ordinal) >= 0;
+            if (!(value is string text) || text.Trim().Length == 0)
+            {
+                return null;
+            }
+
+            string id = text.Trim();
+            if (id.Length >= 2 && id[0] == '<' && id[id.Length - 1] == '>')
+            {
+                id = id.Substring(1, id.Length - 2).Trim();
+            }
+
+            return id.Length == 0 ? null : id;
         }
 
         public Task<SourceRead> ReadAsync(
@@ -214,7 +244,10 @@ namespace IwoBridge.Outlook
                                     // Outlook отдаёт содержимое только файлом: временный файл удаляется сразу после чтения.
                                     string path = Path.Combine(temp, i.ToString(CultureInfo.InvariantCulture));
                                     attachment.SaveAsFile(path);
-                                    list.Add(new AttachmentContent(AttachmentName((string)attachment.FileName, type), File.ReadAllBytes(path)));
+                                    list.Add(new AttachmentContent(
+                                        AttachmentName((string)attachment.FileName, type),
+                                        File.ReadAllBytes(path),
+                                        TryContentId((object)attachment)));
                                     File.Delete(path);
                                 }
                             }
@@ -343,9 +376,9 @@ namespace IwoBridge.Outlook
                 string body = (string)appointment.Body;
                 byte[]? rtf = null;
                 byte[]? raw = RtfBody((object)appointment);
-                if (MapiRtf.LooksLikeRtf(raw) && (body.Trim().Length > 0 || ContainsPicture(raw!)))
+                if (MapiRtf.ShouldCopy(raw, body))
                 {
-                    rtf = MapiRtf.FromRtf(raw!);
+                    rtf = MapiRtf.EnsureCompressed(raw!);
                 }
 
                 step = "категории";
@@ -448,6 +481,9 @@ namespace IwoBridge.Outlook
                     }
                 }
 
+                string seriesBody = (string)appointment.Body;
+                byte[]? seriesRaw = RtfBody((object)appointment);
+                byte[]? seriesRtf = MapiRtf.ShouldCopy(seriesRaw, seriesBody) ? MapiRtf.EnsureCompressed(seriesRaw!) : null;
                 found = pattern.Exceptions;
                 int count = (int)found.Count;
                 for (int i = 1; i <= count; i++)
@@ -455,7 +491,7 @@ namespace IwoBridge.Outlook
                     dynamic exception = found.Item(i);
                     try
                     {
-                        exceptions.Add(ReadException((object)exception, subject, categories, warnings));
+                        exceptions.Add(ReadException((object)exception, subject, categories, warnings, seriesRtf));
                     }
                     finally
                     {
@@ -472,7 +508,8 @@ namespace IwoBridge.Outlook
             }
         }
 
-        private static SourceException ReadException(dynamic exception, string subject, IReadOnlyList<string> seriesCategories, List<string> warnings)
+        private static SourceException ReadException(
+            dynamic exception, string subject, IReadOnlyList<string> seriesCategories, List<string> warnings, byte[]? seriesRtf)
         {
             DateTime originalLocal = (DateTime)exception.OriginalDate;
             DateTime original = LocalToUtc(originalLocal);
@@ -499,6 +536,14 @@ namespace IwoBridge.Outlook
             try
             {
                 int sensitivity = (int)changed.Sensitivity;
+                string occurrenceBody = (string)changed.Body;
+                byte[]? raw = RtfBody((object)changed);
+                byte[]? rtf = MapiRtf.ShouldCopy(raw, occurrenceBody) ? MapiRtf.EnsureCompressed(raw!) : null;
+                if (rtf != null && seriesRtf != null && rtf.SequenceEqual(seriesRtf))
+                {
+                    rtf = null;
+                }
+
                 return new SourceException(
                     original,
                     false,
@@ -506,9 +551,10 @@ namespace IwoBridge.Outlook
                     TimeMapper.ToUtc((DateTime)changed.EndUTC),
                     (string)changed.Subject,
                     (string)changed.Location,
-                    (string)changed.Body,
+                    occurrenceBody,
                     isPrivate: sensitivity == OlPrivate || sensitivity == OlConfidential,
-                    categories: EventCategories.OfOccurrence(ReadCategories((object)changed), seriesCategories));
+                    categories: EventCategories.OfOccurrence(ReadCategories((object)changed), seriesCategories),
+                    rtfCompressed: rtf);
             }
             finally
             {
@@ -533,19 +579,60 @@ namespace IwoBridge.Outlook
             return TimeZoneInfo.ConvertTimeToUtc(value, zone);
         }
 
-        /// <summary>RTF описания; <c>null</c> — Outlook 2007 (свойство RTFBody появилось в Outlook 2010) или описание недоступно.</summary>
+        /// <summary>
+        /// RTF описания: Outlook 2010+ — <c>RTFBody</c> (сырой документ); Outlook 2007 — <c>PR_RTF_COMPRESSED</c>.
+        /// Сбой всего Outlook не глотается: копия без оформления дала бы перезапись туда-сюда.
+        /// </summary>
         private static byte[]? RtfBody(dynamic appointment)
         {
             try
             {
-                return appointment.RTFBody as byte[];
+                if (appointment.RTFBody is byte[] rtf && rtf.Length > 0)
+                {
+                    return rtf;
+                }
             }
-#pragma warning disable CA1031 // Нет RTF — переносится текст описания. Сбой всего Outlook не глотается: копия без
-            // оформления дала бы перезапись на этом прогоне и обратную на следующем.
+#pragma warning disable CA1031 // Нет RTFBody (Outlook 2007) — читаем MAPI.
+            catch (Exception ex) when (!OutlookSession.IsFatal(ex))
+#pragma warning restore CA1031
+            {
+            }
+
+            dynamic? accessor = null;
+            try
+            {
+                accessor = appointment.PropertyAccessor;
+                return accessor.GetProperty(RtfCompressedProp) as byte[];
+            }
+#pragma warning disable CA1031 // Нет 0x1009 — остаётся текст Body.
             catch (Exception ex) when (!OutlookSession.IsFatal(ex))
 #pragma warning restore CA1031
             {
                 return null;
+            }
+            finally
+            {
+                Com.Release(accessor);
+            }
+        }
+
+        private static string? TryContentId(dynamic attachment)
+        {
+            dynamic? accessor = null;
+            try
+            {
+                accessor = attachment.PropertyAccessor;
+                return NormalizeContentId(accessor.GetProperty(AttachContentIdProp));
+            }
+#pragma warning disable CA1031 // Нет cid — обычный файл. Сбой Outlook не глотается.
+            catch (Exception ex) when (!OutlookSession.IsFatal(ex))
+#pragma warning restore CA1031
+            {
+                return null;
+            }
+            finally
+            {
+                Com.Release(accessor);
             }
         }
 

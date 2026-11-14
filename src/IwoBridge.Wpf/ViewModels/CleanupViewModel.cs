@@ -689,12 +689,22 @@ namespace IwoBridge.Wpf.ViewModels
                 .ToArray();
 
             // У серий на границе удаляются только экземпляры в периоде — сама серия остаётся.
-            IEnumerable<PlanRow> trimmed = plan.BoundarySeriesToTrim.Select(s => new PlanRow(
-                "Серия",
-                s.Subject ?? "(без темы)",
-                RussianText.Moment(s.StartUtc, zone),
-                RussianText.Moment(s.EndUtc, zone),
-                "Пересекает границу периода — удаляются только экземпляры внутри периода"));
+            // Время в строке — первое/последнее удаляемое вхождение в периоде, не начало мастера (оно может быть 1949).
+            IEnumerable<PlanRow> trimmed = plan.BoundarySeriesToTrim.Select(s =>
+            {
+                TargetOccurrence[] own = plan.OccurrencesToDelete
+                    .Where(o => s.Uid != null && string.Equals(o.SeriesUid, s.Uid, StringComparison.Ordinal))
+                    .OrderBy(o => o.StartUtc)
+                    .ToArray();
+                DateTime start = own.Length > 0 ? own[0].StartUtc : s.StartUtc;
+                DateTime end = own.Length > 0 ? own[own.Length - 1].EndUtc : s.EndUtc;
+                return new PlanRow(
+                    "Серия",
+                    s.Subject ?? "(без темы)",
+                    RussianText.Moment(start, zone),
+                    RussianText.Moment(end, zone),
+                    "Пересекает границу периода — удаляются только экземпляры внутри периода");
+            });
             IEnumerable<PlanRow> skipped = plan.Skipped.Select(s => new PlanRow(
                 CleanupLabels.KeptItemKind(s.Item),
                 s.Item.Subject ?? "(без темы)",

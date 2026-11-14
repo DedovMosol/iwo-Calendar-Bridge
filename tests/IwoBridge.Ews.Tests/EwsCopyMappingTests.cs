@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using IwoBridge.Core.Errors;
 using IwoBridge.Core.Sync;
+using IwoBridge.Core.Time;
 using IwoBridge.Ews.Mapping;
 using IwoBridge.Ews.Transport;
 using Microsoft.Exchange.WebServices.Data;
@@ -37,6 +38,20 @@ namespace IwoBridge.Ews.Tests
             RecurrenceRule back = EwsRecurrenceMapper.FromEws(EwsRecurrenceMapper.ToEws(rule));
 
             Assert.Equal(rule.Canonical, back.Canonical);
+        }
+
+        [Fact]
+        public void ClippedWeekly_ToEws_StartIsPatternDay()
+        {
+            var rule = new RecurrenceRule(RecurrencePattern.Weekly, 1, new DateTime(1949, 3, 16), days: WeekDays.Wednesday);
+            RecurrenceClip.Write write = RecurrenceClip.ForWrite(
+                rule, new DateTime(2026, 10, 5, 0, 0, 0, DateTimeKind.Utc), TargetTimeZone.FromHours(3));
+
+            Recurrence ews = EwsRecurrenceMapper.ToEws(write.Rule);
+
+            Assert.Equal(new DateTime(2026, 10, 7), ews.StartDate);
+            Assert.False(ews.HasEnd);
+            Assert.Equal(DayOfTheWeek.Wednesday, Assert.Single(((Recurrence.WeeklyPattern)ews).DaysOfTheWeek));
         }
 
         [Fact]

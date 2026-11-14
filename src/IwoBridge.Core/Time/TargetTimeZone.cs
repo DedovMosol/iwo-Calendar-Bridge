@@ -150,6 +150,24 @@ namespace IwoBridge.Core.Time
             return new DateTime(ticks, DateTimeKind.Unspecified);
         }
 
+        /// <summary>
+        /// Местное время приёмника → UTC. Насыщение на границах <see cref="DateTime"/> — как у <see cref="UtcToLocal"/>.
+        /// </summary>
+        public DateTime LocalToUtc(DateTime local)
+        {
+            long ticks = DateTime.SpecifyKind(local, DateTimeKind.Unspecified).Ticks - Offset.Ticks;
+            if (ticks < DateTime.MinValue.Ticks)
+            {
+                ticks = DateTime.MinValue.Ticks;
+            }
+            else if (ticks > DateTime.MaxValue.Ticks)
+            {
+                ticks = DateTime.MaxValue.Ticks;
+            }
+
+            return new DateTime(ticks, DateTimeKind.Utc);
+        }
+
         /// <summary>Первая дата периода, которую принимает программа (EWS работает с датами с 1601 года).</summary>
         public static readonly DateTime MinPeriodDate = new DateTime(1601, 1, 2);
 

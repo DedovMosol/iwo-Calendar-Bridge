@@ -178,8 +178,10 @@ namespace IwoBridge.InMemory
             }
         }
 
-        public Task<IReadOnlyList<string>> CreateAsync(SourceItem item, IReadOnlyList<AttachmentContent> attachments, CancellationToken cancellationToken)
+        public Task<IReadOnlyList<string>> CreateAsync(
+            SourceItem item, IReadOnlyList<AttachmentContent> attachments, DateTime windowStartUtc, CancellationToken cancellationToken)
         {
+            _ = windowStartUtc;
             ThrowIfFails(item);
             lock (_sync)
             {
@@ -189,8 +191,10 @@ namespace IwoBridge.InMemory
             return Task.FromResult(RemarksFor(item));
         }
 
-        public Task<IReadOnlyList<string>> UpdateAsync(string copyItemId, SourceItem item, IReadOnlyList<AttachmentContent> attachments, CancellationToken cancellationToken)
+        public Task<IReadOnlyList<string>> UpdateAsync(
+            string copyItemId, SourceItem item, IReadOnlyList<AttachmentContent> attachments, DateTime windowStartUtc, CancellationToken cancellationToken)
         {
+            _ = windowStartUtc;
             ThrowIfFails(item);
             lock (_sync)
             {

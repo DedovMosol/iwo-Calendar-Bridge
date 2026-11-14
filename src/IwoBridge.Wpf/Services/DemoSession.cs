@@ -140,16 +140,18 @@ namespace IwoBridge.Wpf.Services
             public Task<IReadOnlyList<OwnEvent>> ReadOwnEventsAsync(DateTime windowStartUtc, DateTime windowEndUtc, CancellationToken cancellationToken) =>
                 _inner.ReadOwnEventsAsync(windowStartUtc, windowEndUtc, cancellationToken);
 
-            public async Task<IReadOnlyList<string>> CreateAsync(SourceItem item, IReadOnlyList<AttachmentContent> attachments, CancellationToken cancellationToken)
+            public async Task<IReadOnlyList<string>> CreateAsync(
+                SourceItem item, IReadOnlyList<AttachmentContent> attachments, DateTime windowStartUtc, CancellationToken cancellationToken)
             {
                 await Task.Delay(BatchDelay, CancellationToken.None).ConfigureAwait(false);
-                return await _inner.CreateAsync(item, attachments, cancellationToken).ConfigureAwait(false);
+                return await _inner.CreateAsync(item, attachments, windowStartUtc, cancellationToken).ConfigureAwait(false);
             }
 
-            public async Task<IReadOnlyList<string>> UpdateAsync(string copyItemId, SourceItem item, IReadOnlyList<AttachmentContent> attachments, CancellationToken cancellationToken)
+            public async Task<IReadOnlyList<string>> UpdateAsync(
+                string copyItemId, SourceItem item, IReadOnlyList<AttachmentContent> attachments, DateTime windowStartUtc, CancellationToken cancellationToken)
             {
                 await Task.Delay(BatchDelay, CancellationToken.None).ConfigureAwait(false);
-                return await _inner.UpdateAsync(copyItemId, item, attachments, cancellationToken).ConfigureAwait(false);
+                return await _inner.UpdateAsync(copyItemId, item, attachments, windowStartUtc, cancellationToken).ConfigureAwait(false);
             }
 
             public async Task DeleteAsync(string copyItemId, CancellationToken cancellationToken)

@@ -145,8 +145,23 @@ namespace IwoBridge.Wpf.ViewModels
             {
                 SourceItem? item = action.Source != null && preview.SourceItems.TryGetValue(action.SourceId, out SourceItem? found) ? found : null;
                 string subject = item?.Subject ?? action.Copy?.Subject ?? "(без темы)";
+                RecurrenceClip.Write? clip = item == null ? null : RecurrenceClip.ForWrite(item, preview.WindowStartUtc, zone);
                 DateTime start = item?.StartUtc ?? action.Copy!.SpanStartUtc;
-                string when = RussianText.Moment(start, zone) + (item?.Recurrence != null || action.Copy?.Kind == Core.Model.ItemKind.RecurringMaster ? " (серия)" : string.Empty);
+                if (clip != null && clip.Clipped)
+                {
+                    start = RecurrenceClip.ShiftTimes(item!, clip.StartDate, zone).StartUtc;
+                }
+
+                bool series = item?.Recurrence != null || action.Copy?.Kind == Core.Model.ItemKind.RecurringMaster;
+                string when = RussianText.Moment(start, zone);
+                if (series)
+                {
+                    when += " (серия)";
+                    if (clip != null && clip.Clipped)
+                    {
+                        when += ", в источнике с " + RussianText.Date(clip.Original.StartDate);
+                    }
+                }
                 // Такое же событие человек уже завёл сам — копия по умолчанию не создаётся (иначе дубль), но её можно отметить.
                 bool duplicate = preview.IsDuplicateOfOwn(action);
                 return new CopyRow(

@@ -371,14 +371,14 @@ namespace IwoBridge.App.Copy
         {
             SourceItem item = preview.SourceItems[action.SourceId];
             IReadOnlyList<AttachmentContent> attachments = await LoadAttachmentsAsync(item).ConfigureAwait(false);
-            return await _target.CreateAsync(item, attachments, CancellationToken.None).ConfigureAwait(false);
+            return await _target.CreateAsync(item, attachments, preview.WindowStartUtc, CancellationToken.None).ConfigureAwait(false);
         }
 
         private async Task<IReadOnlyList<string>> UpdateAsync(CopyPreview preview, SyncAction action)
         {
             SourceItem item = preview.SourceItems[action.SourceId];
             IReadOnlyList<AttachmentContent> attachments = await LoadAttachmentsAsync(item).ConfigureAwait(false);
-            return await _target.UpdateAsync(action.Copy!.ItemId, item, attachments, CancellationToken.None).ConfigureAwait(false);
+            return await _target.UpdateAsync(action.Copy!.ItemId, item, attachments, preview.WindowStartUtc, CancellationToken.None).ConfigureAwait(false);
         }
 
         private Task<IReadOnlyList<AttachmentContent>> LoadAttachmentsAsync(SourceItem item)

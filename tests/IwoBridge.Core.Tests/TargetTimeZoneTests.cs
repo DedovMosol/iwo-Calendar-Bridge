@@ -165,5 +165,15 @@ namespace IwoBridge.Core.Tests
             Assert.Equal(new DateTime(2026, 1, 10, 0, 0, 0), local);
             Assert.Equal(DateTimeKind.Unspecified, local.Kind);
         }
+
+        [Fact]
+        public void LocalToUtc_InvertsUtcToLocal()
+        {
+            TargetTimeZone tz = TargetTimeZone.FromOffset(PlusFiveThirty);
+            DateTime utc = new DateTime(2026, 1, 9, 18, 30, 0, DateTimeKind.Utc);
+
+            Assert.Equal(utc, tz.LocalToUtc(tz.UtcToLocal(utc)));
+            Assert.Equal(DateTimeKind.Utc, tz.LocalToUtc(new DateTime(2026, 1, 10, 0, 0, 0)).Kind);
+        }
     }
 }

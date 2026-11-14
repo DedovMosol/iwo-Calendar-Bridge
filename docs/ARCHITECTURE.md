@@ -87,7 +87,7 @@ flowchart TB
 | Errors | `OperationErrorKind`, `ErrorClassifier`, `RetryPolicy` | Классификация, повторы временных ошибок с паузами 1, 2, 4… с (до 60 с или по подсказке сервера), признаки «остановить пакет» и «нужен человек» |
 | Reading, Paging | `CalendarSnapshotReader`, `CompletenessGuard`, `BatchDeleteOutcome` | Постраничный обход с якорем и повтором при сдвиге, строгая проверка полноты чтения и удаления |
 | Cleanup | `CleanupPlanner`, `CleanupExecutor`, `CleanupPlan` | Планирование очистки и пакетное удаление |
-| Sync | `SourceItem`, `RecurrenceRule`, `SyncContent`, `MapiRtf`, `EventCategories`, `CopyRules`, `SyncPlanner`, `OwnEventMatcher`, `ISourceCalendar`, `ICopyTarget` | Модель события источника, отпечаток содержимого, категории, правила для личных событий, план синхронизации, сверка с событиями пользователя |
+| Sync | `SourceItem`, `RecurrenceRule`, `RecurrenceClip`, `OccurrencePick`, `SyncContent`, `MapiRtf`, `EventCategories`, `CopyRules`, `SyncPlanner`, `OwnEventMatcher`, `ISourceCalendar`, `ICopyTarget` | Модель события, клип серии к периоду записи, поиск вхождения в CalendarView, отпечаток, RTF (MELA/LZFu), категории, план, сверка с событиями пользователя |
 
 Логика ядра — чистые функции и неизменяемые типы. Изменяемое состояние есть только в адаптерах и приложении,
 и доступ к нему упорядочен (семафор канала EWS, поток STA Outlook, поток интерфейса).
@@ -132,7 +132,9 @@ sequenceDiagram
   файл) и исключения серии, отпечаток пишется последним запросом. Сбой на любом шаге удаляет созданное, копия с
   отметкой «не дописано» перезаписывается при следующем запуске. Серия пересоздаётся в обратном порядке: сначала
   новая копия, затем удаление прежней. Время пишется в поясе календаря приёмника (`CalendarZones`, классические
-  ID зон Windows), описание — исходным RTF (`MapiRtf`).
+  ID зон Windows). Описание — текст `Body` (OWA/EAS на Exchange 2007) и `PR_RTF_COMPRESSED` (`MapiRtf`: MELA или
+  LZFu). Серия за период клипуется при записи (`RecurrenceClip`), отпечаток — по полному правилу источника.
+  Вхождение исключения ищется в `CalendarView` (`OccurrencePick`: UID без регистра, не соседний single).
 - **Категории.** `SourceItem.Categories` — названия категорий события, `SourceException.Categories` — свои
   категории повторения (`null`, если они те же, что у серии). Источник Outlook читает многозначное
   `PidNameKeywords`, EWS — `item:Categories`. Цвета из списка категорий источника (`SourceRead.CategoryColors`)

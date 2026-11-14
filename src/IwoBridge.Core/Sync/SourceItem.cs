@@ -40,7 +40,8 @@ namespace IwoBridge.Core.Sync
             string? location = null,
             string? body = null,
             bool isPrivate = false,
-            IEnumerable<string>? categories = null)
+            IEnumerable<string>? categories = null,
+            byte[]? rtfCompressed = null)
         {
             OriginalStartUtc = TimeMapper.ToUtc(originalStartUtc);
             IsDeleted = isDeleted;
@@ -58,6 +59,7 @@ namespace IwoBridge.Core.Sync
                 Body = body;
                 IsPrivate = isPrivate;
                 Categories = categories is null ? null : EventCategories.Normalize(categories);
+                RtfCompressed = rtfCompressed is null || rtfCompressed.Length == 0 ? null : rtfCompressed;
             }
         }
 
@@ -88,9 +90,17 @@ namespace IwoBridge.Core.Sync
         public IReadOnlyList<string>? Categories { get; }
 
         /// <summary>
+        /// Описание повторения с оформлением (<see cref="MapiRtf"/>); <c>null</c> — только <see cref="Body"/> или как у серии.
+        /// В отпечаток входит, только если задан: у повторений без RTF запись прежняя.
+        /// </summary>
+#pragma warning disable CA1819
+        public byte[]? RtfCompressed { get; }
+#pragma warning restore CA1819
+
+        /// <summary>
         /// Каноническая запись для отпечатка. Текстовые поля — с длиной впереди, отсутствие — отдельной меткой: иначе
         /// «a|b» + «c» и «a» + «b|c» давали бы одну запись, а очищенная тема не отличалась бы от отсутствующей.
-        /// Свои категории — последним полем и только если они есть: у повторений без них запись прежняя.
+        /// Свои категории и RTF — в конце и только если они есть: у повторений без них запись прежняя.
         /// </summary>
         public string Canonical => IsDeleted
             ? OriginalStartUtc.Ticks.ToString(CultureInfo.InvariantCulture) + "|deleted"
@@ -106,10 +116,26 @@ namespace IwoBridge.Core.Sync
               + (Categories is null
                   ? string.Empty
                   : "|categories:" + Categories.Count.ToString(CultureInfo.InvariantCulture)
-                    + string.Concat(EventCategories.Ordered(Categories).Select(c => "|" + Field(c))));
+                    + string.Concat(EventCategories.Ordered(Categories).Select(c => "|" + Field(c))))
+              + (RtfCompressed is null ? string.Empty : "|rtf:" + MapiRtf.Fingerprint(RtfCompressed));
 
         private static string Field(string? value) =>
             value is null ? "-" : value.Length.ToString(CultureInfo.InvariantCulture) + ":" + value;
+
+        /// <summary>
+        /// Только запись в приёмник: <c>null</c> — поле не трогать (наследует серию); иначе записать, в том числе
+        /// пустую строку — очистить. В модель и отпечаток кладутся сырые значения источника, иначе все серии
+        /// с исключениями один раз пересоздались бы после обновления программы.
+        /// </summary>
+        public static string? IfDifferent(string? occurrence, string? series)
+        {
+            if (occurrence is null)
+            {
+                return null;
+            }
+
+            return string.Equals(occurrence, series ?? string.Empty, StringComparison.Ordinal) ? null : occurrence;
+        }
     }
 
     /// <summary>

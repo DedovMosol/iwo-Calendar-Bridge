@@ -19,5 +19,13 @@ namespace IwoBridge.Ews
 
         public static readonly ExtendedPropertyDefinition JobId =
             new ExtendedPropertyDefinition(PropertySetId, "IwoBridgeJobId", MapiPropertyType.String);
+
+        /// <summary>«1», если правило серии на записи урезано к периоду копирования (начало сдвинуто).</summary>
+        public static readonly ExtendedPropertyDefinition SeriesClipped =
+            new ExtendedPropertyDefinition(PropertySetId, "IwoBridgeSeriesClipped", MapiPropertyType.String);
+
+        /// <summary>Исходная дата начала серии в источнике (yyyy-MM-dd), если <see cref="SeriesClipped"/>.</summary>
+        public static readonly ExtendedPropertyDefinition SeriesStart =
+            new ExtendedPropertyDefinition(PropertySetId, "IwoBridgeSeriesStart", MapiPropertyType.String);
     }
 }

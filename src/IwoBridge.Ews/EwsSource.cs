@@ -53,7 +53,13 @@ namespace IwoBridge.Ews
         };
 
         private static readonly PropertySet OccurrenceProperties = new PropertySet(
-            BasePropertySet.IdOnly, ItemSchema.Subject, ItemSchema.Body, ItemSchema.Sensitivity, ItemSchema.Categories, AppointmentSchema.Location)
+            BasePropertySet.IdOnly,
+            ItemSchema.Subject,
+            ItemSchema.Body,
+            ItemSchema.Sensitivity,
+            ItemSchema.Categories,
+            AppointmentSchema.Location,
+            MapiProperties.RtfCompressed)
         {
             RequestedBodyType = BodyType.Text,
         };
@@ -299,7 +305,7 @@ namespace IwoBridge.Ews
             if (a.TryGetProperty(ItemSchema.Attachments, out AttachmentCollection files) && files != null)
             {
                 // Размер вложения EWS отдаёт начиная с Exchange 2010; для отпечатка хватает имени.
-                attachments.AddRange(files.OfType<FileAttachment>().Select(f => new SyncAttachment(f.Name, 0)));
+                attachments.AddRange(files.OfType<FileAttachment>().Select(f => new SyncAttachment(f.Name, LengthOf(f))));
                 int embedded = files.OfType<ItemAttachment>().Count();
                 if (embedded > 0)
                 {
@@ -323,6 +329,7 @@ namespace IwoBridge.Ews
                     exceptions.AddRange(deleted.Select(d => new SourceException(TimeMapper.ToUtc(d.OriginalStart), true)));
                 }
 
+                byte[]? seriesRtf = a.TryGetProperty(MapiProperties.RtfCompressed, out byte[] masterRtf) ? masterRtf : null;
                 if (a.TryGetProperty(AppointmentSchema.ModifiedOccurrences, out OccurrenceInfoCollection modified) && modified != null)
                 {
                     foreach (OccurrenceInfo occurrence in modified)
@@ -337,10 +344,17 @@ namespace IwoBridge.Ews
                         changed.TryGetProperty(AppointmentSchema.Location, out string l);
                         changed.TryGetProperty(ItemSchema.Sensitivity, out Sensitivity occurrenceSensitivity);
                         string b = changed.TryGetProperty(ItemSchema.Body, out MessageBody mb) ? mb?.Text ?? string.Empty : string.Empty;
+                        byte[]? occurrenceRtf = changed.TryGetProperty(MapiProperties.RtfCompressed, out byte[] occRtf) ? occRtf : null;
+                        if (occurrenceRtf != null && seriesRtf != null && occurrenceRtf.SequenceEqual(seriesRtf))
+                        {
+                            occurrenceRtf = null;
+                        }
+
                         exceptions.Add(new SourceException(
                             TimeMapper.ToUtc(occurrence.OriginalStart), false, TimeMapper.ToUtc(occurrence.Start), TimeMapper.ToUtc(occurrence.End), s, l, b,
                             isPrivate: occurrenceSensitivity == Sensitivity.Private || occurrenceSensitivity == Sensitivity.Confidential,
-                            categories: EventCategories.OfOccurrence(Categories(changed), categories)));
+                            categories: EventCategories.OfOccurrence(Categories(changed), categories),
+                            rtfCompressed: occurrenceRtf));
                     }
                 }
             }
@@ -372,6 +386,24 @@ namespace IwoBridge.Ews
             appointment.TryGetProperty(ItemSchema.Categories, out StringList categories) && categories != null
                 ? EventCategories.Normalize(categories)
                 : Array.Empty<string>();
+
+        /// <summary>
+        /// Размер для отпечатка. На Exchange 2010+ EWS отдаёт Size; на 2007 свойство часто не загружено и бросает —
+        /// тогда 0, в хеше остаётся имя. Содержимое всё равно копируется при записи.
+        /// </summary>
+        private static long LengthOf(FileAttachment file)
+        {
+            try
+            {
+                return file.Size > 0 ? file.Size : 0;
+            }
+#pragma warning disable CA1031
+            catch (Exception)
+#pragma warning restore CA1031
+            {
+                return 0;
+            }
+        }
 
         private sealed class Mapped
         {

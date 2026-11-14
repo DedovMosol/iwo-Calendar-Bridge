@@ -26,14 +26,6 @@ namespace IwoBridge.Ews
     /// </summary>
     public sealed class EwsCopyTarget : ICopyTarget
     {
-        // Окно поиска повторения серии вокруг его ожидаемого начала (сервер отдаёт все повторения окна — выбираем ближайшее).
-        private static readonly TimeSpan OccurrenceSearch = TimeSpan.FromDays(1);
-
-        // Насколько начало повторения в копии может отличаться от ожидаемого: повторения одной серии отстоят друг от
-        // друга не меньше чем на сутки, поэтому ближайшее в пределах половины суток — именно то. Расхождение бывает, когда
-        // пояс источника переходит на летнее время, а пояс календаря приёмника — постоянное смещение.
-        private static readonly TimeSpan OccurrenceTolerance = TimeSpan.FromHours(12);
-
         private static readonly PropertySet ListProperties = new PropertySet(
             BasePropertySet.IdOnly,
             ItemSchema.Subject,
@@ -51,6 +43,7 @@ namespace IwoBridge.Ews
         private readonly FolderId _calendar;
         private readonly EwsCalendarGateway _gateway;
         private readonly TimeZoneInfo _calendarZone;
+        private readonly TargetTimeZone _writeZone;
 
         internal EwsCopyTarget(EwsChannel read, EwsChannel write, FolderId calendar, EwsCalendarGateway gateway, TimeZoneInfo calendarZone)
         {
@@ -59,6 +52,7 @@ namespace IwoBridge.Ews
             _calendar = calendar;
             _gateway = gateway;
             _calendarZone = calendarZone;
+            _writeZone = TargetTimeZone.FromOffset(calendarZone.BaseUtcOffset);
         }
 
         public async Task<IReadOnlyList<BridgeCopy>> ReadCopiesAsync(CancellationToken cancellationToken)
@@ -146,18 +140,20 @@ namespace IwoBridge.Ews
         /// настоящий отпечаток последним. Сбой на любом шаге после создания — созданное удаляется. Не удалилось (связь
         /// пропала) — у копии остаётся отпечаток «не дописано», и следующий запуск её перезапишет.
         /// </summary>
-        public async Task<IReadOnlyList<string>> CreateAsync(SourceItem item, IReadOnlyList<AttachmentContent> attachments, CancellationToken cancellationToken)
+        public async Task<IReadOnlyList<string>> CreateAsync(
+            SourceItem item, IReadOnlyList<AttachmentContent> attachments, DateTime windowStartUtc, CancellationToken cancellationToken)
         {
             if (item is null)
             {
                 throw new ArgumentNullException(nameof(item));
             }
 
+            RecurrenceClip.Write? clip = RecurrenceClip.ForWrite(item, windowStartUtc, _writeZone);
             ItemId id = await _write.RunOnceNonIdempotentAsync(
                 service =>
                 {
                     var appointment = new Appointment(service);
-                    Fill(appointment, item, IncompleteHash);
+                    Fill(appointment, item, IncompleteHash, clip);
                     appointment.Save(_calendar, SendInvitationsMode.SendToNone);
                     return appointment.Id;
                 },
@@ -167,7 +163,7 @@ namespace IwoBridge.Ews
             {
                 await AddAttachmentsAsync(id, attachments, cancellationToken).ConfigureAwait(false);
                 IReadOnlyList<string> remarks = item.Recurrence != null && item.Exceptions.Count > 0
-                    ? await ApplyExceptionsAsync(id, item, cancellationToken).ConfigureAwait(false)
+                    ? await ApplyExceptionsAsync(id, item, clip, cancellationToken).ConfigureAwait(false)
                     : Array.Empty<string>();
                 await StampAsync(id, item.ContentHash, cancellationToken).ConfigureAwait(false);
                 return remarks;
@@ -194,7 +190,7 @@ namespace IwoBridge.Ews
         }
 
         public async Task<IReadOnlyList<string>> UpdateAsync(
-            string copyItemId, SourceItem item, IReadOnlyList<AttachmentContent> attachments, CancellationToken cancellationToken)
+            string copyItemId, SourceItem item, IReadOnlyList<AttachmentContent> attachments, DateTime windowStartUtc, CancellationToken cancellationToken)
         {
             if (item is null)
             {
@@ -205,7 +201,7 @@ namespace IwoBridge.Ews
             {
                 // Серия переписывается целиком: новая копия (правило, исключения, вложения), затем удаление прежней. В таком
                 // порядке сбой создания оставляет прежнюю копию, а сбой удаления — две копии, лишнюю уберёт следующий запуск.
-                IReadOnlyList<string> remarks = await CreateAsync(item, attachments, cancellationToken).ConfigureAwait(false);
+                IReadOnlyList<string> remarks = await CreateAsync(item, attachments, windowStartUtc, cancellationToken).ConfigureAwait(false);
                 await DeleteAsync(copyItemId, cancellationToken).ConfigureAwait(false);
                 return remarks;
             }
@@ -219,7 +215,7 @@ namespace IwoBridge.Ews
                 {
                     Appointment appointment = Appointment.Bind(service, id, new PropertySet(BasePropertySet.IdOnly, ItemSchema.Attachments));
                     appointment.Attachments.Clear();
-                    Fill(appointment, item, IncompleteHash);
+                    Fill(appointment, item, IncompleteHash, clip: null);
                     appointment.Update(ConflictResolutionMode.AlwaysOverwrite, SendInvitationsOrCancellationsMode.SendToNone);
                 },
                 cancellationToken).ConfigureAwait(false);
@@ -296,20 +292,25 @@ namespace IwoBridge.Ews
         }
 
         /// <summary>Поля копии из события источника (одно место для создания и перезаписи — DRY).</summary>
-        private void Fill(Appointment appointment, SourceItem item, string contentHash)
+        private void Fill(Appointment appointment, SourceItem item, string contentHash, RecurrenceClip.Write? clip)
         {
-            (DateTime start, DateTime end) = EwsFieldMapper.TimesForWrite(item.StartUtc, item.EndUtc, item.IsAllDay, _calendarZone);
+            DateTime startUtc = item.StartUtc;
+            DateTime endUtc = item.EndUtc;
+            if (clip != null && clip.Clipped)
+            {
+                (startUtc, endUtc) = RecurrenceClip.ShiftTimes(item, clip.StartDate, _writeZone);
+            }
+
+            (DateTime start, DateTime end) = EwsFieldMapper.TimesForWrite(startUtc, endUtc, item.IsAllDay, _calendarZone);
             appointment.Subject = item.Subject;
             appointment.Location = item.Location;
+            // Сначала текст: OWA/EAS на Exchange 2007 часто смотрят Body, не только 0x1009. Затем RTF с InSync —
+            // оформление и картинки; порядок важен, иначе сервер считает RTF устаревшим.
+            appointment.Body = new MessageBody(BodyType.Text, item.Body);
             if (item.RtfCompressed != null)
             {
-                // Описание с оформлением и картинками — исходным RTF (MapiRtf); текст и HTML Exchange построит сам.
                 appointment.SetExtendedProperty(MapiProperties.RtfCompressed, item.RtfCompressed);
                 appointment.SetExtendedProperty(MapiProperties.RtfInSync, true);
-            }
-            else
-            {
-                appointment.Body = new MessageBody(BodyType.Text, item.Body);
             }
 
             // Пояс события — пояс календаря приёмника. У новой копии он и так берётся из канала записи, а у
@@ -335,9 +336,18 @@ namespace IwoBridge.Ews
 
             appointment.SetExtendedProperty(BridgeExtendedProperties.SourceId, item.SourceId);
             appointment.SetExtendedProperty(BridgeExtendedProperties.ContentHash, contentHash);
-            if (item.Recurrence != null)
+            RecurrenceRule? recurrence = clip?.Rule ?? item.Recurrence;
+            if (recurrence != null)
             {
-                appointment.Recurrence = EwsRecurrenceMapper.ToEws(item.Recurrence);
+                appointment.Recurrence = EwsRecurrenceMapper.ToEws(recurrence);
+            }
+
+            if (clip != null && clip.Clipped)
+            {
+                appointment.SetExtendedProperty(BridgeExtendedProperties.SeriesClipped, "1");
+                appointment.SetExtendedProperty(
+                    BridgeExtendedProperties.SeriesStart,
+                    clip.Original.StartDate.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture));
             }
         }
 
@@ -350,16 +360,15 @@ namespace IwoBridge.Ews
         ///    пересоздавалась бы и удалялась при каждом запуске, а копия оставалась бы прежней.
         ///  - Ошибка удаления повторения (DeleteItems сообщает её в ответе) — отказ.
         /// </summary>
-        private async Task<IReadOnlyList<string>> ApplyExceptionsAsync(ItemId masterId, SourceItem item, CancellationToken cancellationToken)
+        private async Task<IReadOnlyList<string>> ApplyExceptionsAsync(
+            ItemId masterId, SourceItem item, RecurrenceClip.Write? clip, CancellationToken cancellationToken)
         {
             var remarks = new List<string>();
-            string? uid = await _read.RunAsync(
-                service =>
-                {
-                    Appointment master = Appointment.Bind(service, masterId, new PropertySet(BasePropertySet.IdOnly, AppointmentSchema.ICalUid));
-                    return master.TryGetProperty(AppointmentSchema.ICalUid, out string value) ? value : null;
-                },
-                cancellationToken).ConfigureAwait(false);
+            string? uid = await ReadSeriesUidAsync(masterId, cancellationToken).ConfigureAwait(false);
+            if (string.IsNullOrEmpty(uid))
+            {
+                uid = await ReadSeriesUidAsync(masterId, cancellationToken).ConfigureAwait(false);
+            }
 
             // Без UID повторение своей серии не отличить от чужого события в то же время — а дальше удаление. Не рисковать.
             if (string.IsNullOrEmpty(uid))
@@ -367,24 +376,41 @@ namespace IwoBridge.Ews
                 throw new InvalidOperationException("Сервер не вернул идентификатор созданной серии — исключения серии не применены.");
             }
 
+            string seriesUid = uid!;
             foreach (SourceException exception in item.Exceptions)
             {
+                if (clip != null && !RecurrenceClip.IncludesException(clip, exception, _writeZone))
+                {
+                    continue;
+                }
+
                 DateTime expected = ExpectedOccurrenceStart(exception.OriginalStartUtc, item.IsAllDay);
                 ItemId? occurrenceId = await _read.RunAsync(
                     service =>
                     {
-                        var view = new CalendarView(expected - OccurrenceSearch, expected + OccurrenceSearch)
+                        var view = new CalendarView(expected - OccurrencePick.SearchWindow, expected + OccurrencePick.SearchWindow)
                         {
-                            PropertySet = new PropertySet(BasePropertySet.IdOnly, AppointmentSchema.Start, AppointmentSchema.ICalUid),
+                            PropertySet = new PropertySet(
+                                BasePropertySet.IdOnly,
+                                AppointmentSchema.Start,
+                                AppointmentSchema.ICalUid,
+                                AppointmentSchema.AppointmentType),
                         };
                         FindItemsResults<Appointment> found = service.FindAppointments(_calendar, view);
-                        return found.Items
-                            .Where(a => a.TryGetProperty(AppointmentSchema.ICalUid, out string u) && string.Equals(u, uid, StringComparison.Ordinal))
-                            .Select(a => (a.Id, Distance: a.TryGetProperty(AppointmentSchema.Start, out DateTime s) ? (TimeMapper.ToUtc(s) - expected).Duration() : TimeSpan.MaxValue))
-                            .Where(a => a.Distance < OccurrenceTolerance)
-                            .OrderBy(a => a.Distance)
-                            .Select(a => a.Id)
-                            .FirstOrDefault();
+                        var candidates = new OccurrencePick.Candidate[found.Items.Count];
+                        for (int i = 0; i < found.Items.Count; i++)
+                        {
+                            Appointment a = found.Items[i];
+                            a.TryGetProperty(AppointmentSchema.ICalUid, out string u);
+                            a.TryGetProperty(AppointmentSchema.Start, out DateTime start);
+                            bool series = !a.TryGetProperty(AppointmentSchema.AppointmentType, out AppointmentType type)
+                                || type == AppointmentType.Occurrence
+                                || type == AppointmentType.Exception;
+                            candidates[i] = new OccurrencePick.Candidate(u, TimeMapper.ToUtc(start), series);
+                        }
+
+                        int? index = OccurrencePick.IndexOf(candidates, seriesUid, expected, item.IsAllDay, _writeZone);
+                        return index is int at ? found.Items[at].Id : null;
                     },
                     cancellationToken).ConfigureAwait(false);
 
@@ -419,9 +445,30 @@ namespace IwoBridge.Ews
                         occurrence.StartTimeZone = _calendarZone;
                         occurrence.Start = start;
                         occurrence.End = end;
-                        occurrence.Subject = exception.Subject ?? item.Subject;
-                        occurrence.Location = exception.Location ?? item.Location;
-                        occurrence.Body = new MessageBody(BodyType.Text, exception.Body ?? item.Body);
+                        // null после IfDifferent — как у серии, поле не трогаем (иначе COM/EWS «Зал» затёрло бы RTF/наследование).
+                        string? subject = SourceException.IfDifferent(exception.Subject, item.Subject);
+                        string? location = SourceException.IfDifferent(exception.Location, item.Location);
+                        string? body = SourceException.IfDifferent(exception.Body, item.Body);
+                        if (subject != null)
+                        {
+                            occurrence.Subject = subject;
+                        }
+
+                        if (location != null)
+                        {
+                            occurrence.Location = location;
+                        }
+
+                        if (body != null)
+                        {
+                            occurrence.Body = new MessageBody(BodyType.Text, body);
+                        }
+
+                        if (exception.RtfCompressed != null)
+                        {
+                            occurrence.SetExtendedProperty(MapiProperties.RtfCompressed, exception.RtfCompressed);
+                            occurrence.SetExtendedProperty(MapiProperties.RtfInSync, true);
+                        }
                         if (exception.IsPrivate)
                         {
                             occurrence.Sensitivity = Sensitivity.Private;
@@ -450,6 +497,17 @@ namespace IwoBridge.Ews
             }
 
             return remarks;
+        }
+
+        private Task<string?> ReadSeriesUidAsync(ItemId masterId, CancellationToken cancellationToken)
+        {
+            return _read.RunAsync(
+                service =>
+                {
+                    Appointment master = Appointment.Bind(service, masterId, new PropertySet(BasePropertySet.IdOnly, AppointmentSchema.ICalUid));
+                    return master.TryGetProperty(AppointmentSchema.ICalUid, out string value) ? value : null;
+                },
+                cancellationToken);
         }
 
         /// <summary>

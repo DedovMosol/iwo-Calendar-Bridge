@@ -57,6 +57,27 @@ namespace IwoBridge.Core.Tests
         }
 
         [Fact]
+        public void Canonical_RtfOnlyWhenPresent_DoesNotChangePlainException()
+        {
+            SourceException plain = Modified("a", "b");
+            byte[] rtf = MapiRtf.FromRtf(System.Text.Encoding.ASCII.GetBytes(@"{\rtf1\ansi x}"));
+            var withRtf = new SourceException(Original, false, Original.AddHours(1), Original.AddHours(2), "a", "b", rtfCompressed: rtf);
+
+            Assert.DoesNotContain("rtf:", plain.Canonical, StringComparison.Ordinal);
+            Assert.Contains("rtf:", withRtf.Canonical, StringComparison.Ordinal);
+            Assert.NotEqual(plain.Canonical, withRtf.Canonical);
+        }
+
+        [Fact]
+        public void IfDifferent_NullWhenSame_EmptyWhenCleared()
+        {
+            Assert.Null(SourceException.IfDifferent("Зал", "Зал"));
+            Assert.Null(SourceException.IfDifferent(null, "Зал"));
+            Assert.Equal(string.Empty, SourceException.IfDifferent(string.Empty, "Зал"));
+            Assert.Equal("Другой", SourceException.IfDifferent("Другой", "Зал"));
+        }
+
+        [Fact]
         public void NormalSeries_NoPrivateOccurrences_Unchanged()
         {
             SourceItem series = Series(Modified("Перенос", "Зал 2"));

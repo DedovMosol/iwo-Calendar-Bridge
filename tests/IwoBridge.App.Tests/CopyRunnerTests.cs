@@ -296,12 +296,12 @@ namespace IwoBridge.App.Tests
                 _inner.ReadOwnEventsAsync(windowStartUtc, windowEndUtc, cancellationToken);
 
             public Task<System.Collections.Generic.IReadOnlyList<string>> CreateAsync(
-                SourceItem item, System.Collections.Generic.IReadOnlyList<AttachmentContent> attachments, CancellationToken cancellationToken) =>
-                _inner.CreateAsync(item, attachments, cancellationToken);
+                SourceItem item, System.Collections.Generic.IReadOnlyList<AttachmentContent> attachments, DateTime windowStartUtc, CancellationToken cancellationToken) =>
+                _inner.CreateAsync(item, attachments, windowStartUtc, cancellationToken);
 
             public Task<System.Collections.Generic.IReadOnlyList<string>> UpdateAsync(
-                string copyItemId, SourceItem item, System.Collections.Generic.IReadOnlyList<AttachmentContent> attachments, CancellationToken cancellationToken) =>
-                _inner.UpdateAsync(copyItemId, item, attachments, cancellationToken);
+                string copyItemId, SourceItem item, System.Collections.Generic.IReadOnlyList<AttachmentContent> attachments, DateTime windowStartUtc, CancellationToken cancellationToken) =>
+                _inner.UpdateAsync(copyItemId, item, attachments, windowStartUtc, cancellationToken);
 
             public Task DeleteAsync(string copyItemId, CancellationToken cancellationToken) =>
                 throw new InvalidOperationException("сервер не удалил элемент");

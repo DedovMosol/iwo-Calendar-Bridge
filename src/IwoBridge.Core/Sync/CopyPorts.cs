@@ -92,16 +92,22 @@ namespace IwoBridge.Core.Sync
         Task<IReadOnlyList<OwnEvent>> ReadOwnEventsAsync(DateTime windowStartUtc, DateTime windowEndUtc, CancellationToken cancellationToken);
 
         /// <summary>Создать копию события (без приглашений участникам).</summary>
+        /// <param name="windowStartUtc">
+        /// Начало периода копирования: серия в приёмнике начинается с первого вхождения не раньше этой даты
+        /// (<see cref="RecurrenceClip"/>). Отпечаток пишется по исходному правилу.
+        /// </param>
         /// <returns>
         /// Замечания к записанной копии: что перенести нельзя (например, изменённое повторение, которого нет в серии
         /// копии). Копия при этом записана целиком и считается актуальной: следующий запуск её не перезаписывает, а
         /// замечание показывается один раз. Пусто — перенесено всё.
         /// </returns>
-        Task<IReadOnlyList<string>> CreateAsync(SourceItem item, IReadOnlyList<AttachmentContent> attachments, CancellationToken cancellationToken);
+        Task<IReadOnlyList<string>> CreateAsync(
+            SourceItem item, IReadOnlyList<AttachmentContent> attachments, DateTime windowStartUtc, CancellationToken cancellationToken);
 
         /// <summary>Сделать существующую копию равной событию; реализация может пересоздать её (серии).</summary>
         /// <returns>Замечания к записанной копии, как у <see cref="CreateAsync"/>.</returns>
-        Task<IReadOnlyList<string>> UpdateAsync(string copyItemId, SourceItem item, IReadOnlyList<AttachmentContent> attachments, CancellationToken cancellationToken);
+        Task<IReadOnlyList<string>> UpdateAsync(
+            string copyItemId, SourceItem item, IReadOnlyList<AttachmentContent> attachments, DateTime windowStartUtc, CancellationToken cancellationToken);
 
         /// <summary>Удалить копию (в «Удалённые», без отмен участникам).</summary>
         Task DeleteAsync(string copyItemId, CancellationToken cancellationToken);
