@@ -156,5 +156,87 @@ namespace IwoBridge.Core.Sync
 
         /// <summary>Порядок для отпечатка: в нём порядок названий не важен.</summary>
         internal static IEnumerable<string> Ordered(IEnumerable<string> names) => names.OrderBy(n => n, StringComparer.Ordinal);
+
+        /// <summary>
+        /// Список категорий ящика (CategoryList.xsd, скрытое сообщение календаря). Цвет в XML на единицу меньше
+        /// <see cref="CategoryColor"/> Outlook. Разбор без System.Xml: ядро на него ссылаться не может.
+        /// </summary>
+        public static IReadOnlyDictionary<string, CategoryColor> FromListXml(string? xml)
+        {
+            var map = new Dictionary<string, CategoryColor>(StringComparer.OrdinalIgnoreCase);
+            if (string.IsNullOrEmpty(xml))
+            {
+                return map;
+            }
+
+            string text = xml!;
+            int cursor = 0;
+            while (true)
+            {
+                int start = IndexOfIgnoreCase(text, "<category", cursor);
+                if (start < 0)
+                {
+                    return map;
+                }
+
+                int end = text.IndexOf('>', start);
+                if (end < 0)
+                {
+                    return map;
+                }
+
+                string tag = text.Substring(start, end - start);
+                cursor = end + 1;
+                string? name = Attribute(tag, "name");
+                string? colorText = Attribute(tag, "color");
+                if (string.IsNullOrWhiteSpace(name) || colorText is null)
+                {
+                    continue;
+                }
+
+                if (!int.TryParse(colorText, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int xmlColor))
+                {
+                    continue;
+                }
+
+                int outlook = xmlColor + 1;
+                if (outlook > 0 && Enum.IsDefined(typeof(CategoryColor), outlook))
+                {
+                    string trimmed = name!.Trim();
+                    if (trimmed.Length > 0 && !map.ContainsKey(trimmed))
+                    {
+                        map.Add(trimmed, (CategoryColor)outlook);
+                    }
+                }
+            }
+        }
+
+        private static string? Attribute(string tag, string name)
+        {
+            const char doubleQuote = (char)34;
+            const char singleQuote = (char)39;
+            string doublePref = name + "=" + doubleQuote;
+            int at = IndexOfIgnoreCase(tag, doublePref);
+            if (at >= 0)
+            {
+                int start = at + doublePref.Length;
+                int end = tag.IndexOf(doubleQuote, start);
+                return end < 0 ? null : tag.Substring(start, end - start);
+            }
+
+            string singlePref = name + "=" + singleQuote;
+            at = IndexOfIgnoreCase(tag, singlePref);
+            if (at < 0)
+            {
+                return null;
+            }
+
+            int value = at + singlePref.Length;
+            int close = tag.IndexOf(singleQuote, value);
+            return close < 0 ? null : tag.Substring(value, close - value);
+        }
+
+        private static int IndexOfIgnoreCase(string text, string value, int start = 0) =>
+            text.IndexOf(value, start, StringComparison.OrdinalIgnoreCase);
     }
 }

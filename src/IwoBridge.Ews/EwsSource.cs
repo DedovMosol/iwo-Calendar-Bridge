@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Exchange.WebServices.Data;
@@ -177,7 +178,8 @@ namespace IwoBridge.Ews
             string? incomplete = !listed
                 ? "Календарь источника менялся во время чтения — часть событий могла не попасть в перечень."
                 : unreadable == 0 ? null : "Не прочитано событий источника: " + unreadable + ".";
-            return new SourceRead(items, incomplete, warnings);
+            IReadOnlyDictionary<string, CategoryColor>? colors = await ReadMailboxColorsAsync(cancellationToken).ConfigureAwait(false);
+            return new SourceRead(items, incomplete, warnings, colors);
         }
 
         public Task<IReadOnlyList<AttachmentContent>> LoadAttachmentsAsync(SourceItem item, CancellationToken cancellationToken)
@@ -245,27 +247,7 @@ namespace IwoBridge.Ews
                 service =>
                 {
                     Item source = Item.Bind(service, new ItemId(itemId), new PropertySet(BasePropertySet.IdOnly, ItemSchema.Attachments));
-                    FileAttachment[] files = source.Attachments.OfType<FileAttachment>().ToArray();
-                    if (files.Length == 0)
-                    {
-                        return Array.Empty<AttachmentContent>();
-                    }
-
-                    ServiceResponseCollection<GetAttachmentResponse> responses = service.GetAttachments(
-                        files.Cast<Attachment>().ToArray(), null, Array.Empty<PropertyDefinitionBase>());
-                    var loaded = new List<AttachmentContent>(files.Length);
-                    foreach (GetAttachmentResponse response in responses)
-                    {
-                        if (response.Result != ServiceResult.Success || !(response.Attachment is FileAttachment file) || file.Content is null)
-                        {
-                            throw new InvalidOperationException(
-                                "Вложение события источника не прочиталось: " + (response.ErrorMessage ?? response.ErrorCode.ToString()) + ".");
-                        }
-
-                        loaded.Add(new AttachmentContent(file.Name, file.Content, file.ContentId));
-                    }
-
-                    return loaded;
+                    return ContentsOf(service, source.Attachments, required: true) ?? Array.Empty<AttachmentContent>();
                 },
                 cancellationToken).ConfigureAwait(false);
 
@@ -482,20 +464,18 @@ namespace IwoBridge.Ews
                 return result;
             }
 
-            embedded = files.OfType<ItemAttachment>().Count();
+            ItemAttachment[] items = files.OfType<ItemAttachment>().ToArray();
             FileAttachment[] list = files.OfType<FileAttachment>().ToArray();
-            if (list.Length == 0)
+            bool needHash = items.Length > 0;
+            if (!needHash)
             {
-                return result;
-            }
-
-            bool needHash = false;
-            foreach (FileAttachment file in list)
-            {
-                if (LengthOf(file) == 0)
+                foreach (FileAttachment file in list)
                 {
-                    needHash = true;
-                    break;
+                    if (LengthOf(file) == 0)
+                    {
+                        needHash = true;
+                        break;
+                    }
                 }
             }
 
@@ -503,31 +483,17 @@ namespace IwoBridge.Ews
             {
                 try
                 {
-                    ServiceResponseCollection<GetAttachmentResponse> responses = service.GetAttachments(
-                        list.Cast<Attachment>().ToArray(), null, Array.Empty<PropertyDefinitionBase>());
-                    var contents = new List<AttachmentContent>(list.Length);
-                    foreach (GetAttachmentResponse response in responses)
-                    {
-                        if (response.Result == ServiceResult.Success && response.Attachment is FileAttachment got && got.Content != null)
-                        {
-                            contents.Add(new AttachmentContent(got.Name, got.Content, got.ContentId));
-                            result.Add(new SyncAttachment(got.Name, got.Content.Length, MapiRtf.Fingerprint(got.Content)));
-                        }
-                    }
-
-                    if (result.Count == list.Length)
+                    IReadOnlyList<AttachmentContent>? contents = ContentsOf(service, files, required: false);
+                    if (contents != null && contents.Count >= list.Length && (list.Length > 0 || items.Length == 0 || contents.Count > 0))
                     {
                         RememberFiles(cacheKey, contents);
-                        return result;
+                        return Meta(contents);
                     }
-
-                    result.Clear();
                 }
 #pragma warning disable CA1031
                 catch (Exception)
 #pragma warning restore CA1031
                 {
-                    result.Clear();
                 }
             }
 
@@ -536,6 +502,7 @@ namespace IwoBridge.Ews
                 result.Add(new SyncAttachment(file.Name, LengthOf(file)));
             }
 
+            embedded = items.Length;
             return result;
         }
 
@@ -570,28 +537,130 @@ namespace IwoBridge.Ews
             }
 
             Item source = Item.Bind(service, new ItemId(itemId), new PropertySet(BasePropertySet.IdOnly, ItemSchema.Attachments));
-            FileAttachment[] files = source.Attachments.OfType<FileAttachment>().ToArray();
-            if (files.Length == 0)
-            {
-                RememberFiles(itemId, Array.Empty<AttachmentContent>());
-                return new List<SyncAttachment>();
-            }
-
-            ServiceResponseCollection<GetAttachmentResponse> responses = service.GetAttachments(
-                files.Cast<Attachment>().ToArray(), null, Array.Empty<PropertyDefinitionBase>());
-            var contents = new List<AttachmentContent>(files.Length);
-            foreach (GetAttachmentResponse response in responses)
-            {
-                if (response.Result != ServiceResult.Success || !(response.Attachment is FileAttachment file) || file.Content is null)
-                {
-                    return new List<SyncAttachment>();
-                }
-
-                contents.Add(new AttachmentContent(file.Name, file.Content, file.ContentId));
-            }
-
+            IReadOnlyList<AttachmentContent> contents = ContentsOf(service, source.Attachments, required: false)
+                ?? Array.Empty<AttachmentContent>();
             RememberFiles(itemId, contents);
             return Meta(contents);
+        }
+
+
+        /// <summary>
+        /// Файлы и вложенные элементы (письма/события) как .eml через MimeContent — так EWS 2007 отдаёт то, что Outlook
+        /// сохраняет SaveAsFile у olEmbeddedItem. OLE-поток, если он FileAttachment, уже в файлах.
+        /// </summary>
+        private static IReadOnlyList<AttachmentContent>? ContentsOf(
+            ExchangeService service, AttachmentCollection? attachments, bool required)
+        {
+            if (attachments is null)
+            {
+                return Array.Empty<AttachmentContent>();
+            }
+
+            var result = new List<AttachmentContent>();
+            FileAttachment[] fileList = attachments.OfType<FileAttachment>().ToArray();
+            if (fileList.Length > 0)
+            {
+                ServiceResponseCollection<GetAttachmentResponse> responses = service.GetAttachments(
+                    fileList.Cast<Attachment>().ToArray(), null, Array.Empty<PropertyDefinitionBase>());
+                foreach (GetAttachmentResponse response in responses)
+                {
+                    if (response.Result != ServiceResult.Success || !(response.Attachment is FileAttachment file) || file.Content is null)
+                    {
+                        if (required)
+                        {
+                            throw new InvalidOperationException(
+                                "Вложение события источника не прочиталось: " + (response.ErrorMessage ?? response.ErrorCode.ToString()) + ".");
+                        }
+
+                        return null;
+                    }
+
+                    result.Add(new AttachmentContent(file.Name, file.Content, file.ContentId));
+                }
+            }
+
+            ItemAttachment[] itemList = attachments.OfType<ItemAttachment>().ToArray();
+            if (itemList.Length > 0)
+            {
+                ServiceResponseCollection<GetAttachmentResponse> responses = service.GetAttachments(
+                    itemList.Cast<Attachment>().ToArray(),
+                    null,
+                    new PropertyDefinitionBase[] { ItemSchema.MimeContent });
+                foreach (GetAttachmentResponse response in responses)
+                {
+                    if (response.Result != ServiceResult.Success || !(response.Attachment is ItemAttachment item))
+                    {
+                        continue;
+                    }
+
+                    byte[]? mime = item.Item?.MimeContent?.Content;
+                    if (mime is null || mime.Length == 0)
+                    {
+                        continue;
+                    }
+
+                    result.Add(new AttachmentContent(ItemFileName(item), mime, contentId: null));
+                }
+            }
+
+            return result;
+        }
+
+        private static string ItemFileName(ItemAttachment item)
+        {
+            string name = (item.Name ?? string.Empty).Trim();
+            if (name.Length == 0)
+            {
+                name = "вложение";
+            }
+
+            if (!name.EndsWith(".eml", StringComparison.OrdinalIgnoreCase)
+                && !name.EndsWith(".msg", StringComparison.OrdinalIgnoreCase))
+            {
+                name += ".eml";
+            }
+
+            return name;
+        }
+
+        private Task<IReadOnlyDictionary<string, CategoryColor>?> ReadMailboxColorsAsync(CancellationToken cancellationToken)
+        {
+            return _channel.RunAsync<IReadOnlyDictionary<string, CategoryColor>?>(
+                service =>
+                {
+                    try
+                    {
+                        var view = new ItemView(20) { Traversal = ItemTraversal.Associated };
+                        view.PropertySet = new PropertySet(
+                            BasePropertySet.IdOnly, ItemSchema.ItemClass, ItemSchema.Subject, MapiProperties.RoamingXml);
+                        FindItemsResults<Item> found = service.FindItems(_calendar, view);
+                        foreach (Item item in found.Items)
+                        {
+                            string className = item.TryGetProperty(ItemSchema.ItemClass, out string cls) ? cls ?? string.Empty : string.Empty;
+                            if (className.IndexOf("CategoryList", StringComparison.OrdinalIgnoreCase) < 0)
+                            {
+                                continue;
+                            }
+
+                            if (item.TryGetProperty(MapiProperties.RoamingXml, out byte[] xml) && xml != null && xml.Length > 0)
+                            {
+                                IReadOnlyDictionary<string, CategoryColor> parsed = EventCategories.FromListXml(Encoding.UTF8.GetString(xml));
+                                if (parsed.Count > 0)
+                                {
+                                    return parsed;
+                                }
+                            }
+                        }
+                    }
+#pragma warning disable CA1031 // Цвета — подсказка предпросмотра, копирование от них не зависит.
+                    catch (Exception)
+#pragma warning restore CA1031
+                    {
+                    }
+
+                    return null;
+                },
+                cancellationToken);
         }
 
         private static List<SyncAttachment> Meta(IReadOnlyList<AttachmentContent> contents)

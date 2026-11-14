@@ -10,5 +10,8 @@ namespace IwoBridge.Ews.Mapping
 
         /// <summary>PR_RTF_IN_SYNC: RTF — основное описание, текст и HTML строятся из него.</summary>
         public static readonly ExtendedPropertyDefinition RtfInSync = new ExtendedPropertyDefinition(0x0E1F, MapiPropertyType.Boolean);
+
+        /// <summary>PR_ROAMING_XMLSTREAM: XML списка категорий ящика (скрытое IPM.Configuration.CategoryList).</summary>
+        public static readonly ExtendedPropertyDefinition RoamingXml = new ExtendedPropertyDefinition(0x7C08, MapiPropertyType.Binary);
     }
 }

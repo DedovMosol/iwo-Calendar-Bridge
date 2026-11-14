@@ -138,5 +138,27 @@ namespace IwoBridge.Core.Tests
                 CategoryColor.Olive,
                 EventCategories.ColorOf("Green", new Dictionary<string, CategoryColor>(StringComparer.OrdinalIgnoreCase) { ["Green"] = CategoryColor.Olive }));
         }
+
+        [Fact]
+        public void FromListXml_OutlookColorIsXmlPlusOne()
+        {
+            const string xml = "<categories xmlns=\"CategoryList.xsd\">"
+                + "<category name=\"Выезд\" color=\"7\" />"
+                + "<category name=\"Red Category\" color=\"0\" />"
+                + "<category name=\"\" color=\"1\" />"
+                + "</categories>";
+            IReadOnlyDictionary<string, CategoryColor> map = EventCategories.FromListXml(xml);
+            Assert.Equal(CategoryColor.Red, map["Red Category"]);
+            Assert.Equal(CategoryColor.Blue, map["Выезд"]);
+            Assert.False(map.ContainsKey(""));
+        }
+
+        [Fact]
+        public void FromListXml_Empty_NoThrow()
+        {
+            Assert.Empty(EventCategories.FromListXml(null));
+            Assert.Empty(EventCategories.FromListXml(""));
+            Assert.Empty(EventCategories.FromListXml("<categories/>"));
+        }
     }
 }

@@ -543,7 +543,7 @@ namespace IwoBridge.Outlook
                         }
                         else
                         {
-                            warnings.Add("«" + subject + "»: вложение «" + (string)attachment.DisplayName + "» — ссылка или встроенный объект OLE, в копию не переносится.");
+                            warnings.Add("«" + subject + "»: вложение «" + (string)attachment.DisplayName + "» — ссылка на файл вне события, в копию не переносится.");
                         }
                     }
                     finally

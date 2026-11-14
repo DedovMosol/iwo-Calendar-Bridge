@@ -133,7 +133,7 @@ namespace IwoBridge.Ews.Tests
             return target.ReadChannel.RunAsync(
                 service =>
                 {
-                    var view = new CalendarView(startUtc, endUtc)
+                    var view = new CalendarView(startUtc, endUtc, 1000)
                     {
                         PropertySet = new PropertySet(BasePropertySet.IdOnly, ItemSchema.Subject),
                     };
