@@ -559,9 +559,8 @@ namespace IwoBridge.Ews
                     Appointment a = found.Items[i];
                     a.TryGetProperty(AppointmentSchema.ICalUid, out string u);
                     a.TryGetProperty(AppointmentSchema.Start, out DateTime start);
-                    bool series = !a.TryGetProperty(AppointmentSchema.AppointmentType, out AppointmentType type)
-                        || type == AppointmentType.Occurrence
-                        || type == AppointmentType.Exception;
+                    bool series = a.TryGetProperty(AppointmentSchema.AppointmentType, out AppointmentType type)
+                        && (type == AppointmentType.Occurrence || type == AppointmentType.Exception);
                     candidates[i] = new OccurrencePick.Candidate(u, TimeMapper.ToUtc(start), series);
                 }
 

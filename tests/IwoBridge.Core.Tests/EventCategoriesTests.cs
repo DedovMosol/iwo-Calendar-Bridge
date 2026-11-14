@@ -176,5 +176,12 @@ namespace IwoBridge.Core.Tests
             byte[] data = System.Text.Encoding.Unicode.GetPreamble().Concat(System.Text.Encoding.Unicode.GetBytes(xml)).ToArray();
             Assert.Equal(CategoryColor.Red, EventCategories.FromListXml(data)["Red Category"]);
         }
+
+        [Fact]
+        public void FromListXml_UnescapesAmpersandInName()
+        {
+            const string xml = "<category name=\"A &amp; B\" color=\"7\" />";
+            Assert.Equal(CategoryColor.Blue, EventCategories.FromListXml(xml)["A & B"]);
+        }
     }
 }

@@ -269,7 +269,7 @@ namespace IwoBridge.Core.Sync
             {
                 int start = at + doublePref.Length;
                 int end = tag.IndexOf(doubleQuote, start);
-                return end < 0 ? null : tag.Substring(start, end - start);
+                return end < 0 ? null : Unescape(tag.Substring(start, end - start));
             }
 
             string singlePref = name + "=" + singleQuote;
@@ -281,7 +281,22 @@ namespace IwoBridge.Core.Sync
 
             int value = at + singlePref.Length;
             int close = tag.IndexOf(singleQuote, value);
-            return close < 0 ? null : tag.Substring(value, close - value);
+            return close < 0 ? null : Unescape(tag.Substring(value, close - value));
+        }
+
+        private static string Unescape(string value)
+        {
+            if (value.IndexOf('&') < 0)
+            {
+                return value;
+            }
+
+            return value
+                .Replace("&amp;", "&")
+                .Replace("&lt;", "<")
+                .Replace("&gt;", ">")
+                .Replace("&quot;", ((char)34).ToString())
+                .Replace("&apos;", "'");
         }
 
         private static int IndexOfIgnoreCase(string text, string value, int start = 0) =>

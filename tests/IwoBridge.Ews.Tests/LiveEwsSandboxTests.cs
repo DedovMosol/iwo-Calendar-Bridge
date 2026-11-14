@@ -137,7 +137,13 @@ namespace IwoBridge.Ews.Tests
                     {
                         PropertySet = new PropertySet(BasePropertySet.IdOnly, ItemSchema.Subject),
                     };
-                    return service.FindAppointments(folder, view).Items.Count(a =>
+                    FindItemsResults<Appointment> found = service.FindAppointments(folder, view);
+                    if (found.MoreAvailable)
+                    {
+                        throw new InvalidOperationException("CalendarView усечён — клип 1990 нельзя подтвердить.");
+                    }
+
+                    return found.Items.Count(a =>
                         a.TryGetProperty(ItemSchema.Subject, out string s) && s == "Live: клип 1990");
                 },
                 ct);
