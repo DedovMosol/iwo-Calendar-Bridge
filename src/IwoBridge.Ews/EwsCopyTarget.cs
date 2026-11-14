@@ -308,6 +308,36 @@ namespace IwoBridge.Ews
                 cancellationToken);
         }
 
+
+        /// <summary>
+        /// HTML — как HTML (OWA/новые Outlook, картинки cid:). Пустой текст при RTF не пишем: Exchange 2007 из
+        /// пустого BodyType.Text собирает новое RTF и выкидывает оформление и \pict.
+        /// </summary>
+        private static void ApplyBody(Appointment appointment, string? body, byte[]? rtfCompressed)
+        {
+            string text = body ?? string.Empty;
+            if (EventBody.LooksLikeHtml(text))
+            {
+                appointment.Body = new MessageBody(BodyType.HTML, text);
+                return;
+            }
+
+            if (text.Trim().Length > 0)
+            {
+                appointment.Body = new MessageBody(BodyType.Text, text);
+            }
+            else if (body != null && rtfCompressed is null)
+            {
+                appointment.Body = new MessageBody(BodyType.Text, string.Empty);
+            }
+
+            if (rtfCompressed != null)
+            {
+                appointment.SetExtendedProperty(MapiProperties.RtfCompressed, rtfCompressed);
+                appointment.SetExtendedProperty(MapiProperties.RtfInSync, true);
+            }
+        }
+
         /// <summary>Поля копии из события источника (одно место для создания и перезаписи — DRY).</summary>
         private void Fill(Appointment appointment, SourceItem item, string contentHash, RecurrenceClip.Write? clip)
         {
@@ -321,14 +351,7 @@ namespace IwoBridge.Ews
             (DateTime start, DateTime end) = EwsFieldMapper.TimesForWrite(startUtc, endUtc, item.IsAllDay, _calendarZone);
             appointment.Subject = item.Subject;
             appointment.Location = item.Location;
-            // Сначала текст: OWA/EAS на Exchange 2007 часто смотрят Body, не только 0x1009. Затем RTF с InSync —
-            // оформление и картинки; порядок важен, иначе сервер считает RTF устаревшим.
-            appointment.Body = new MessageBody(BodyType.Text, item.Body);
-            if (item.RtfCompressed != null)
-            {
-                appointment.SetExtendedProperty(MapiProperties.RtfCompressed, item.RtfCompressed);
-                appointment.SetExtendedProperty(MapiProperties.RtfInSync, true);
-            }
+            ApplyBody(appointment, item.Body, item.RtfCompressed);
 
             // Пояс события — пояс календаря приёмника. У новой копии он и так берётся из канала записи, а у
             // перезаписываемой (Bind) не загружен, и Exchange 2007 без него не меняет время (проверено вживую).
@@ -451,15 +474,9 @@ namespace IwoBridge.Ews
                             occurrence.Location = location;
                         }
 
-                        if (body != null)
+                        if (body != null || exception.RtfCompressed != null)
                         {
-                            occurrence.Body = new MessageBody(BodyType.Text, body);
-                        }
-
-                        if (exception.RtfCompressed != null)
-                        {
-                            occurrence.SetExtendedProperty(MapiProperties.RtfCompressed, exception.RtfCompressed);
-                            occurrence.SetExtendedProperty(MapiProperties.RtfInSync, true);
+                            ApplyBody(occurrence, body, exception.RtfCompressed);
                         }
                         if (exception.IsPrivate)
                         {

@@ -485,10 +485,10 @@ namespace IwoBridge.Outlook
                 // Описание с оформлением и картинками — RTF, как его хранит Outlook. Пустое описание (у Outlook это
                 // всё равно RTF-заготовка в десятки КБ) не переносится: копия получит пустой текст.
                 step = "описание";
-                string body = (string)appointment.Body;
+                string body = Description((object)appointment);
                 byte[]? rtf = null;
                 byte[]? raw = RtfBody((object)appointment);
-                if (MapiRtf.ShouldCopy(raw, body))
+                if (!EventBody.LooksLikeHtml(body) && MapiRtf.ShouldCopy(raw, body))
                 {
                     rtf = MapiRtf.EnsureCompressed(raw!);
                 }
@@ -593,9 +593,11 @@ namespace IwoBridge.Outlook
                     }
                 }
 
-                string seriesBody = (string)appointment.Body;
+                string seriesBody = Description((object)appointment);
                 byte[]? seriesRaw = RtfBody((object)appointment);
-                byte[]? seriesRtf = MapiRtf.ShouldCopy(seriesRaw, seriesBody) ? MapiRtf.EnsureCompressed(seriesRaw!) : null;
+                byte[]? seriesRtf = !EventBody.LooksLikeHtml(seriesBody) && MapiRtf.ShouldCopy(seriesRaw, seriesBody)
+                    ? MapiRtf.EnsureCompressed(seriesRaw!)
+                    : null;
                 found = pattern.Exceptions;
                 int count = (int)found.Count;
                 for (int i = 1; i <= count; i++)
@@ -648,9 +650,11 @@ namespace IwoBridge.Outlook
             try
             {
                 int sensitivity = (int)changed.Sensitivity;
-                string occurrenceBody = (string)changed.Body;
+                string occurrenceBody = Description((object)changed);
                 byte[]? raw = RtfBody((object)changed);
-                byte[]? rtf = MapiRtf.ShouldCopy(raw, occurrenceBody) ? MapiRtf.EnsureCompressed(raw!) : null;
+                byte[]? rtf = !EventBody.LooksLikeHtml(occurrenceBody) && MapiRtf.ShouldCopy(raw, occurrenceBody)
+                    ? MapiRtf.EnsureCompressed(raw!)
+                    : null;
                 if (rtf != null && seriesRtf != null && rtf.SequenceEqual(seriesRtf))
                 {
                     rtf = null;
@@ -696,7 +700,36 @@ namespace IwoBridge.Outlook
         /// RTF описания: Outlook 2010+ — <c>RTFBody</c> (сырой документ); Outlook 2007 — <c>PR_RTF_COMPRESSED</c>.
         /// Сбой всего Outlook не глотается: копия без оформления дала бы перезапись туда-сюда.
         /// </summary>
+        private const int OlFormatHtml = 2;
+
+        /// <summary>
+        /// HTML-описание (BodyFormat HTML, картинки cid:), иначе обычный Body. HTMLBody как Body закрыт Object Model Guard.
+        /// </summary>
+        internal static string Description(dynamic appointment)
+        {
+            string body = (string)appointment.Body ?? string.Empty;
+            try
+            {
+                if ((int)appointment.BodyFormat == OlFormatHtml)
+                {
+                    string html = (string)appointment.HTMLBody;
+                    if (!string.IsNullOrWhiteSpace(html))
+                    {
+                        return html;
+                    }
+                }
+            }
+#pragma warning disable CA1031 // Нет HTML — остаётся текст Body.
+            catch (Exception ex) when (!OutlookSession.IsFatal(ex))
+#pragma warning restore CA1031
+            {
+            }
+
+            return body;
+        }
+
         private static byte[]? RtfBody(dynamic appointment)
+
         {
             try
             {
