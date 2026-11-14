@@ -156,9 +156,25 @@ namespace IwoBridge.Core.Tests
         [Fact]
         public void FromListXml_Empty_NoThrow()
         {
-            Assert.Empty(EventCategories.FromListXml(null));
+            Assert.Empty(EventCategories.FromListXml((string?)null));
+            Assert.Empty(EventCategories.FromListXml((byte[]?)null));
             Assert.Empty(EventCategories.FromListXml(""));
             Assert.Empty(EventCategories.FromListXml("<categories/>"));
+        }
+
+        [Fact]
+        public void FromListXml_DoesNotTreatCategoriesRootAsCategory()
+        {
+            const string xml = "<categories xmlns=\"CategoryList.xsd\"><category name=\"Выезд\" color=\"7\"/></categories>";
+            Assert.Equal(CategoryColor.Blue, EventCategories.FromListXml(xml)["Выезд"]);
+        }
+
+        [Fact]
+        public void FromListXml_Utf16Bom()
+        {
+            const string xml = "<category name=\"Red Category\" color=\"0\" />";
+            byte[] data = System.Text.Encoding.Unicode.GetPreamble().Concat(System.Text.Encoding.Unicode.GetBytes(xml)).ToArray();
+            Assert.Equal(CategoryColor.Red, EventCategories.FromListXml(data)["Red Category"]);
         }
     }
 }

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 
 namespace IwoBridge.Core.Sync
 {
@@ -157,6 +158,42 @@ namespace IwoBridge.Core.Sync
         /// <summary>Порядок для отпечатка: в нём порядок названий не важен.</summary>
         internal static IEnumerable<string> Ordered(IEnumerable<string> names) => names.OrderBy(n => n, StringComparer.Ordinal);
 
+        /// <summary>То же, из байт свойства (UTF-8, UTF-16, с BOM).</summary>
+        public static IReadOnlyDictionary<string, CategoryColor> FromListXml(byte[]? data)
+        {
+            if (data is null || data.Length == 0)
+            {
+                return FromListXml((string?)null);
+            }
+
+            return FromListXml(DecodeXml(data));
+        }
+
+        private static string DecodeXml(byte[] data)
+        {
+            if (data.Length >= 3 && data[0] == 0xEF && data[1] == 0xBB && data[2] == 0xBF)
+            {
+                return Encoding.UTF8.GetString(data, 3, data.Length - 3);
+            }
+
+            if (data.Length >= 2 && data[0] == 0xFF && data[1] == 0xFE)
+            {
+                return Encoding.Unicode.GetString(data, 2, data.Length - 2);
+            }
+
+            if (data.Length >= 2 && data[0] == 0xFE && data[1] == 0xFF)
+            {
+                return Encoding.BigEndianUnicode.GetString(data, 2, data.Length - 2);
+            }
+
+            if (data.Length >= 4 && data[0] != 0 && data[1] == 0 && data[3] == 0)
+            {
+                return Encoding.Unicode.GetString(data);
+            }
+
+            return Encoding.UTF8.GetString(data);
+        }
+
         /// <summary>
         /// Список категорий ящика (CategoryList.xsd, скрытое сообщение календаря). Цвет в XML на единицу меньше
         /// <see cref="CategoryColor"/> Outlook. Разбор без System.Xml: ядро на него ссылаться не может.
@@ -177,6 +214,17 @@ namespace IwoBridge.Core.Sync
                 if (start < 0)
                 {
                     return map;
+                }
+
+                int after = start + 9;
+                if (after < text.Length)
+                {
+                    char next = text[after];
+                    if (next != ' ' && next != (char)9 && next != '/' && next != '>')
+                    {
+                        cursor = after;
+                        continue;
+                    }
                 }
 
                 int end = text.IndexOf('>', start);

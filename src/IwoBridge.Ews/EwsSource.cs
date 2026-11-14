@@ -79,6 +79,8 @@ namespace IwoBridge.Ews
             new Dictionary<string, Dictionary<long, string>>(StringComparer.Ordinal);
         private Dictionary<string, IReadOnlyList<AttachmentContent>> _fileCache =
             new Dictionary<string, IReadOnlyList<AttachmentContent>>(StringComparer.Ordinal);
+        private IReadOnlyDictionary<string, CategoryColor>? _mailboxColors;
+        private bool _mailboxColorsRead;
 
         /// <param name="includeBridgeCopies">Читать и копии моста — только для проверки записанного (живые тесты).</param>
         internal EwsSource(string label, EwsChannel channel, FolderId calendar, EwsCalendarGateway gateway, bool includeBridgeCopies = false)
@@ -178,8 +180,7 @@ namespace IwoBridge.Ews
             string? incomplete = !listed
                 ? "Календарь источника менялся во время чтения — часть событий могла не попасть в перечень."
                 : unreadable == 0 ? null : "Не прочитано событий источника: " + unreadable + ".";
-            IReadOnlyDictionary<string, CategoryColor>? colors = await ReadMailboxColorsAsync(cancellationToken).ConfigureAwait(false);
-            return new SourceRead(items, incomplete, warnings, colors);
+            return new SourceRead(items, incomplete, warnings, await ReadMailboxColorsAsync(cancellationToken).ConfigureAwait(false));
         }
 
         public Task<IReadOnlyList<AttachmentContent>> LoadAttachmentsAsync(SourceItem item, CancellationToken cancellationToken)
@@ -367,7 +368,7 @@ namespace IwoBridge.Ews
             string? warning = null;
             if (embedded > 0)
             {
-                warning = "«" + subject + "»: вложенные письма и события (" + embedded + ") в копию не переносятся, только файлы.";
+                warning = "«" + subject + "»: вложенные элементы без MIME (" + embedded + ") в копию не перенесены.";
             }
 
             RecurrenceRule? rule = null;
@@ -486,6 +487,12 @@ namespace IwoBridge.Ews
                     IReadOnlyList<AttachmentContent>? contents = ContentsOf(service, files, required: false);
                     if (contents != null && contents.Count >= list.Length && (list.Length > 0 || items.Length == 0 || contents.Count > 0))
                     {
+                        embedded = items.Length - (contents.Count - list.Length);
+                        if (embedded < 0)
+                        {
+                            embedded = 0;
+                        }
+
                         RememberFiles(cacheKey, contents);
                         return Meta(contents);
                     }
@@ -537,8 +544,12 @@ namespace IwoBridge.Ews
             }
 
             Item source = Item.Bind(service, new ItemId(itemId), new PropertySet(BasePropertySet.IdOnly, ItemSchema.Attachments));
-            IReadOnlyList<AttachmentContent> contents = ContentsOf(service, source.Attachments, required: false)
-                ?? Array.Empty<AttachmentContent>();
+            IReadOnlyList<AttachmentContent>? contents = ContentsOf(service, source.Attachments, required: false);
+            if (contents is null)
+            {
+                return new List<SyncAttachment>();
+            }
+
             RememberFiles(itemId, contents);
             return Meta(contents);
         }
@@ -623,14 +634,22 @@ namespace IwoBridge.Ews
             return name;
         }
 
-        private Task<IReadOnlyDictionary<string, CategoryColor>?> ReadMailboxColorsAsync(CancellationToken cancellationToken)
+        private async Task<IReadOnlyDictionary<string, CategoryColor>?> ReadMailboxColorsAsync(CancellationToken cancellationToken)
         {
-            return _channel.RunAsync<IReadOnlyDictionary<string, CategoryColor>?>(
+            lock (_sync)
+            {
+                if (_mailboxColorsRead)
+                {
+                    return _mailboxColors;
+                }
+            }
+
+            IReadOnlyDictionary<string, CategoryColor>? colors = await _channel.RunAsync<IReadOnlyDictionary<string, CategoryColor>?>(
                 service =>
                 {
                     try
                     {
-                        var view = new ItemView(20) { Traversal = ItemTraversal.Associated };
+                        var view = new ItemView(100) { Traversal = ItemTraversal.Associated };
                         view.PropertySet = new PropertySet(
                             BasePropertySet.IdOnly, ItemSchema.ItemClass, ItemSchema.Subject, MapiProperties.RoamingXml);
                         FindItemsResults<Item> found = service.FindItems(_calendar, view);
@@ -644,7 +663,7 @@ namespace IwoBridge.Ews
 
                             if (item.TryGetProperty(MapiProperties.RoamingXml, out byte[] xml) && xml != null && xml.Length > 0)
                             {
-                                IReadOnlyDictionary<string, CategoryColor> parsed = EventCategories.FromListXml(Encoding.UTF8.GetString(xml));
+                                IReadOnlyDictionary<string, CategoryColor> parsed = EventCategories.FromListXml(xml);
                                 if (parsed.Count > 0)
                                 {
                                     return parsed;
@@ -660,7 +679,15 @@ namespace IwoBridge.Ews
 
                     return null;
                 },
-                cancellationToken);
+                cancellationToken).ConfigureAwait(false);
+
+            lock (_sync)
+            {
+                _mailboxColors = colors;
+                _mailboxColorsRead = true;
+            }
+
+            return colors;
         }
 
         private static List<SyncAttachment> Meta(IReadOnlyList<AttachmentContent> contents)
