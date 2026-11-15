@@ -87,6 +87,7 @@ namespace IwoBridge.Wpf.ViewModels
         private string? _autostartError;
         private string? _pausedReason;
         private string? _lastProblem;
+        private TimeSpan? _transientBackoff;
 
         /// <param name="run">Один автоматический запуск копирования.</param>
         /// <param name="changed">Настройки изменились — сохранить.</param>
@@ -357,11 +358,18 @@ namespace IwoBridge.Wpf.ViewModels
                 _lastIsProblem = outcome.IsProblem;
                 if (outcome.NeedsAttention)
                 {
+                    _transientBackoff = null;
                     _pausedReason = outcome.Summary; // до правки подключения — без новых попыток входа
                     OnPropertyChanged(nameof(IsPaused));
                 }
+                else if (outcome.IsProblem)
+                {
+                    // Сеть сама оживёт: не ждать весь интервал и не долбить каждую секунду — 1, 2, 4 … мин до интервала.
+                    Arm(NextTransientDelay());
+                }
                 else
                 {
+                    _transientBackoff = null;
                     Arm(TimeSpan.FromMinutes(_interval.Minutes));
                 }
 
@@ -378,6 +386,20 @@ namespace IwoBridge.Wpf.ViewModels
             }
 
             RaiseStatus();
+        }
+
+        private TimeSpan NextTransientDelay()
+        {
+            TimeSpan interval = TimeSpan.FromMinutes(_interval.Minutes);
+            TimeSpan wait = _transientBackoff ?? FirstDelay;
+            if (wait > interval)
+            {
+                wait = interval;
+            }
+
+            TimeSpan doubled = TimeSpan.FromTicks(wait.Ticks * 2);
+            _transientBackoff = doubled > interval ? interval : doubled;
+            return wait;
         }
 
         private void Arm(TimeSpan due)

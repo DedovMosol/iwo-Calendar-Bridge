@@ -113,17 +113,25 @@ namespace IwoBridge.Wpf.Tests
         }
 
         [Fact]
-        public async Task NetworkError_NotPaused_NextRunAfterInterval()
+        public async Task NetworkError_NotPaused_BackoffThenIntervalAfterSuccess()
         {
             var timer = new FakeTimer();
+            bool problem = true;
             var auto = new AutoCopyViewModel(
-                timer, null, () => Task.FromResult(new AutoRunOutcome("нет связи", true)), () => { }, true, 30);
+                timer, null,
+                () => Task.FromResult(problem ? new AutoRunOutcome("нет связи", true) : new AutoRunOutcome("изменений нет", false)),
+                () => { }, true, 30);
 
             await timer.FireAsync();
-
             Assert.False(auto.IsPaused);
+            Assert.Equal(AutoCopyViewModel.FirstDelay, timer.Due);
+
+            await timer.FireAsync();
+            Assert.Equal(TimeSpan.FromMinutes(2), timer.Due);
+
+            problem = false;
+            await timer.FireAsync();
             Assert.Equal(TimeSpan.FromMinutes(30), timer.Due);
-            Assert.True(auto.RunNowCommand.CanExecute(null));
         }
 
         [Fact]
